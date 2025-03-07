@@ -1,0 +1,53 @@
+@use "../Gantt/gantt_globals" as *;
+
+.app {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+
+  display: flex;
+  flex-direction: column;
+  font-family: 'Roboto', sans-serif;
+  //color: whitesmoke;
+}
+
+
+.gantt-container {
+
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: scroll;
+
+  &-left {
+    z-index: 3;
+    min-width: 400px;
+    position: sticky;
+    left: 0;
+
+
+  }
+
+  &-right {
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+
+    &-top {
+      position: sticky;
+      top: 0;
+      height: $ruler-height;
+    }
+
+    &-bottom {
+      width: 100%;
+      flex: 1;
+    }
+  }
+
+
+}
+

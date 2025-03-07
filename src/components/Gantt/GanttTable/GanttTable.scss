@@ -1,0 +1,39 @@
+@use "../gantt_globals" as *;
+
+.gantt-table {
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background-color: white;
+
+    thead {
+      height: $ruler-height;
+      position: sticky;
+      top: 0;
+      background-color: whitesmoke;
+      box-sizing: border-box;
+      font-family: Roboto;
+      
+      th {
+        padding: 0 30px;
+        border-right: 1px solid whitesmoke;
+        color: #8d8e8f;
+        
+      }
+    }
+
+    tbody {
+
+      tr {
+        height: $row-height;
+        //border-bottom: 1px solid #ccc;
+        border-right: 1px solid #ccc;
+      }
+
+      td {
+        padding: 0 30px;
+      }
+    }
+  }
+}

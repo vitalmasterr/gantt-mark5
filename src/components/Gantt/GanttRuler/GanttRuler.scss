@@ -1,0 +1,13 @@
+@use "../gantt_globals" as *;
+
+.gantt-ruler {
+  background-color: whitesmoke;
+  height: $ruler-height;
+
+  svg {
+    text {
+      //font-size: 12px;
+      fill: #8d8e8f;
+    }
+  }
+}
