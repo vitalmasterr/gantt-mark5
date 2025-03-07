@@ -3,171 +3,198 @@ import useGanttStore from "../useGanttStore.js";
 import { drawHelper } from "../ganttHelpers.js";
 import * as d3 from "d3";
 
-function GanttCanvas(props) {
+/**
+ * Rounds (snaps) a Date to the nearest increment in local time.
+ *
+ * For day-level snapping, pass incrementMs = 24 * 60 * 60 * 1000.
+ *
+ * Example for 8-hour snapping:
+ *   roundDateLocal(date, 8 * 60 * 60 * 1000)
+ */
+function roundDateLocal(date, incrementMs) {
+    // Start-of-day in local time
+    const localMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    // ms from local midnight to the original date
+    const offsetFromMidnight = date.getTime() - localMidnight.getTime();
+
+    const remainder = offsetFromMidnight % incrementMs;
+    const half = incrementMs / 2;
+
+    // Snap offset up or down
+    let snappedOffset;
+    if (remainder >= half) {
+        snappedOffset = offsetFromMidnight + (incrementMs - remainder);
+    } else {
+        snappedOffset = offsetFromMidnight - remainder;
+    }
+
+    return new Date(localMidnight.getTime() + snappedOffset);
+}
+
+/**
+ * For day-level snapping:
+ *    24 * 60 * 60 * 1000
+ */
+const SNAP_INCREMENT = 24 * 60 * 60 * 1000;
+
+function GanttCanvas() {
     const timeRanges = useGanttStore(state => state.timeRanges);
-    const defaults = useGanttStore(state => state.defaults);
-    const tasks = useGanttStore(state => state.tasks);
-    const scale = useGanttStore(state => state.scale);
-    const width = useGanttStore(state => state.width);
-    const setTasks = useGanttStore(state => state.setTasks);
+    const defaults   = useGanttStore(state => state.defaults);
+    const tasks      = useGanttStore(state => state.tasks);
+    const scale      = useGanttStore(state => state.scale);
+    const width      = useGanttStore(state => state.width);
+    const setTasks   = useGanttStore(state => state.setTasks);
 
     const svgRef = React.useRef(null);
 
     React.useEffect(() => {
-        // Guard against invalid date range
+        // Guard for invalid date range
         if (!timeRanges?.start || !timeRanges?.end || timeRanges.start > timeRanges.end) {
             return;
         }
 
         const svg = d3.select(svgRef.current);
-        // Clear previous
+        // Clear any existing drawing
         svg.selectAll("*").remove();
 
         const height = defaults.rowHeight * tasks.length;
         svg.attr("width", width);
         svg.attr("height", height);
 
-        // 1) Draw grid + tasks
+        // (1) Draw background grid + tasks
         drawHelper.drawCanvas(scale, svg, timeRanges, defaults, tasks, "2w");
 
-        // ----- DRAG BEHAVIOR FOR ENTIRE BAR (move bar left/right) -----
+        // ============================
+        //  HELPER: finalize + commit
+        // ============================
+        function commitChanges(d, barSelection) {
+            const finalX = parseFloat(barSelection.attr("x"));
+            const finalW = parseFloat(barSelection.attr("width"));
+
+            // Convert to Date
+            let newStart = scale.invert(finalX);
+            let newEnd   = scale.invert(finalX + finalW);
+
+            // Snap to local day boundary (or local increments)
+            newStart = roundDateLocal(newStart, SNAP_INCREMENT);
+            newEnd   = roundDateLocal(newEnd,   SNAP_INCREMENT);
+
+            // Build updated tasks
+            const updatedTasks = tasks.map(t =>
+                t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
+            );
+            setTasks(updatedTasks);
+        }
+
+        // ============================
+        //    DRAG ENTIRE BAR
+        // ============================
         const dragBar = d3.drag()
             .on("start", function(event, d) {
-                // highlight the bar
+                // highlight
                 d3.select(this).attr("stroke", "black");
-                // store offset for the bar drag
                 d.__offsetX = event.x - parseFloat(d3.select(this).attr("x"));
             })
             .on("drag", function(event, d) {
-                const newX = event.x - d.__offsetX;
+                // Real-time snapping
+                const bar = d3.select(this);
+                const rawX = event.x - d.__offsetX;
 
-                // move the bar
-                d3.select(this).attr("x", newX);
+                // Convert X → local date, snap, then back → X
+                let proposedDate = scale.invert(rawX);
+                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                const snappedX = scale(proposedDate);
 
-                // move the text as well
-                d3.select(this.parentNode).select("text.task-label").attr("x", newX + 10);
+                // Move bar + text
+                bar.attr("x", snappedX);
+                d3.select(this.parentNode).select("text.task-label").attr("x", snappedX + 10);
             })
             .on("end", function(event, d) {
                 // remove highlight
                 d3.select(this).attr("stroke", null);
-
-                // final position
-                const finalX = parseFloat(d3.select(this).attr("x"));
-                const barWidth = parseFloat(d3.select(this).attr("width"));
-
-                // convert back to dates
-                const newStart = scale.invert(finalX);
-                const newEnd   = scale.invert(finalX + barWidth);
-
-                // build updated tasks array
-                const updatedTasks = tasks.map(t =>
-                    t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
-                );
-                setTasks(updatedTasks);
+                commitChanges(d, d3.select(this));
             });
 
-        // ----- DRAG BEHAVIOR FOR LEFT HANDLE -----
+        // ============================
+        //    DRAG LEFT HANDLE
+        // ============================
         const dragLeftHandle = d3.drag()
             .on("start", function(event, d) {
-                // highlight bar
+                // highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
-                // store the original end so we keep it fixed
-                d.__initialEnd = d.end;
+                // store right side
+                d.__rightX = scale(d.end);
             })
             .on("drag", function(event, d) {
                 const bar = d3.select(this.parentNode).select("rect.task-bar");
                 const text = d3.select(this.parentNode).select("text.task-label");
 
-                // new X for left edge
-                const newX = event.x;
+                let rawLeftX = event.x;
+                // snap
+                let proposedDate = scale.invert(rawLeftX);
+                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                const snappedX = scale(proposedDate);
 
-                // keep the bar's right side at scale(d.__initialEnd)
-                const rightX = scale(d.__initialEnd);
-                const newWidth = rightX - newX;
+                // keep right side fixed
+                const w = d.__rightX - snappedX;
+                if (w < 0) return; // avoid negative widths
 
-                // move bar left edge
-                bar.attr("x", newX);
-                bar.attr("width", newWidth);
-
-                // move text near left edge
-                text.attr("x", newX + 10);
+                bar.attr("x", snappedX).attr("width", w);
+                text.attr("x", snappedX + 10);
             })
             .on("end", function(event, d) {
-                // remove highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", null);
-
                 const bar = d3.select(this.parentNode).select("rect.task-bar");
-                const finalX = parseFloat(bar.attr("x"));
-                const finalW = parseFloat(bar.attr("width"));
-
-                const newStart = scale.invert(finalX);
-                const newEnd   = scale.invert(finalX + finalW);
-
-                // build updated tasks
-                const updatedTasks = tasks.map(t =>
-                    t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
-                );
-                setTasks(updatedTasks);
+                commitChanges(d, bar);
             });
 
-        // ----- DRAG BEHAVIOR FOR RIGHT HANDLE -----
+        // ============================
+        //    DRAG RIGHT HANDLE
+        // ============================
         const dragRightHandle = d3.drag()
             .on("start", function(event, d) {
-                // highlight bar
+                // highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
-                // store original start so we keep it fixed
-                d.__initialStart = d.start;
+                // store left side
+                d.__leftX = scale(d.start);
             })
             .on("drag", function(event, d) {
                 const bar = d3.select(this.parentNode).select("rect.task-bar");
-                const text = d3.select(this.parentNode).select("text.task-label");
+                let rawRightX = event.x;
 
-                // new X for right edge
-                const newRightX = event.x;
+                // snap
+                let proposedDate = scale.invert(rawRightX);
+                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                const snappedRightX = scale(proposedDate);
 
-                // keep bar's left side at scale(d.__initialStart)
-                const leftX = scale(d.__initialStart);
-                const newW = newRightX - leftX;
+                const newW = snappedRightX - d.__leftX;
+                if (newW < 0) return;
 
                 bar.attr("width", newW);
-
-                // text can remain closer to left unless bar is very small
-                // or simply do nothing. If you'd like it to track the right edge, adjust as needed.
-                // For now, let's not move the text for right-handle drag.
             })
             .on("end", function(event, d) {
-                // remove highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", null);
-
                 const bar = d3.select(this.parentNode).select("rect.task-bar");
-                const finalX = parseFloat(bar.attr("x"));
-                const finalW = parseFloat(bar.attr("width"));
-
-                const newStart = scale.invert(finalX);
-                const newEnd   = scale.invert(finalX + finalW);
-
-                // build updated tasks
-                const updatedTasks = tasks.map(t =>
-                    t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
-                );
-                setTasks(updatedTasks);
+                commitChanges(d, bar);
             });
 
-        // Attach the bar-drag to the main rect
+        // ============================
+        //   ATTACH DRAG TO ELEMENTS
+        // ============================
+        // 1) Entire bar drag
         svg.selectAll(".task-bar").call(dragBar);
 
-        // Add invisible handles for left & right edges
-        // (so they can be grabbed even without a visible knob)
-        const handleWidth = 8; // or 6, etc.
-        svg.selectAll(".task-group").each(function(d, i) {
+        // 2) Create invisible left/right handles
+        const handleWidth = 8;
+        svg.selectAll(".task-group").each(function(d) {
             const group = d3.select(this);
-            const bar   = group.select("rect.task-bar");
-            const x     = parseFloat(bar.attr("x"));
-            const w     = parseFloat(bar.attr("width"));
-            const y     = parseFloat(bar.attr("y"));
-            const h     = parseFloat(bar.attr("height"));
+            const bar = group.select("rect.task-bar");
+            const x = parseFloat(bar.attr("x"));
+            const w = parseFloat(bar.attr("width"));
+            const y = parseFloat(bar.attr("y"));
+            const h = parseFloat(bar.attr("height"));
 
-            // Left handle:
+            // Left handle
             group.append("rect")
                 .attr("class", "task-handle-left")
                 .attr("x", x - handleWidth / 2)
@@ -177,7 +204,7 @@ function GanttCanvas(props) {
                 .attr("fill", "transparent")
                 .style("cursor", "ew-resize");
 
-            // Right handle:
+            // Right handle
             group.append("rect")
                 .attr("class", "task-handle-right")
                 .attr("x", x + w - handleWidth / 2)
@@ -188,7 +215,7 @@ function GanttCanvas(props) {
                 .style("cursor", "ew-resize");
         });
 
-        // Attach the handle-drags
+        // 3) Attach drag behavior to handles
         svg.selectAll(".task-handle-left").call(dragLeftHandle);
         svg.selectAll(".task-handle-right").call(dragRightHandle);
 
