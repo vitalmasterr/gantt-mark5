@@ -38,25 +38,28 @@ function useApp() {
                     id: 1,
                     name: "Task 1",
                     start: parseLocalDate("2021-06-01"),
-                    end:   parseLocalDate("2021-06-10"),
+                    end: parseLocalDate("2021-06-10"),
+                    dependencies: [{id: 2, type: "FS"},{id: 4, type: "FS"}],
                 },
                 {
                     id: 2,
                     name: "Task 2",
                     start: parseLocalDate("2021-06-05"),
-                    end:   parseLocalDate("2021-06-15"),
+                    end: parseLocalDate("2021-06-15"),
+                    dependencies: [{id: 3, type: "FS"}],
                 },
                 {
                     id: 3,
                     name: "Task 3",
                     start: parseLocalDate("2021-06-10"),
-                    end:   parseLocalDate("2021-06-20"),
+                    end: parseLocalDate("2021-06-20"),
+                    dependencies: [{id: 4, type: "SS", lag: 5}],
                 },
                 {
                     id: 4,
                     name: "Task 4",
                     start: parseLocalDate("2021-06-15"),
-                    end:   parseLocalDate("2021-06-25"),
+                    end: parseLocalDate("2021-06-25"),
                 },
             ]);
         }, 450);

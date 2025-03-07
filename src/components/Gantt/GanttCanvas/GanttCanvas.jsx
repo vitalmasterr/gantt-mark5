@@ -5,17 +5,12 @@ import { drawHelper } from "../ganttHelpers.js";
 import * as d3 from "d3";
 
 /**
- * Rounds (snaps) a Date to the nearest increment in local time,
- * but only if snapping is enabled.
+ * If snapping is enabled, rounds a Date to the nearest increment.
  */
 function maybeSnap(date) {
     const { snapEnabled, snapIncrement } = useGanttStore.getState();
-    if (!snapEnabled) {
-        // If snap is disabled, just return the date as-is
-        return date;
-    }
+    if (!snapEnabled) return date;
 
-    // Otherwise, do the actual rounding:
     const incrementMs = snapIncrement;
     const localMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const offsetFromMidnight = date.getTime() - localMidnight.getTime();
@@ -46,36 +41,37 @@ function GanttCanvas() {
             return;
         }
 
+        // Clear the SVG and set size
         const svg = d3.select(svgRef.current);
-        svg.selectAll("*").remove();  // clear existing
+        svg.selectAll("*").remove();
 
-        const height = defaults.rowHeight * tasks.length;
-        svg.attr("width", width).attr("height", height);
+        const totalHeight = defaults.rowHeight * tasks.length;
+        svg.attr("width", width).attr("height", totalHeight);
 
-        // (1) Draw background grid + tasks
+        // ------------------------------------------------------
+        // 1) Draw background grid + tasks
+        // ------------------------------------------------------
         drawHelper.drawCanvas(scale, svg, timeRanges, defaults, tasks, "2w");
 
-        // Helper to commit changes to store after a drag
+        // ------------------------------------------------------
+        // 2) Drag/Resize logic for each task bar
+        // ------------------------------------------------------
         function commitChanges(d, barSelection) {
             const finalX = parseFloat(barSelection.attr("x"));
             const finalW = parseFloat(barSelection.attr("width"));
 
-            // Convert to Date
             let newStart = scale.invert(finalX);
             let newEnd   = scale.invert(finalX + finalW);
 
-            // Snap or not, depending on store:
             newStart = maybeSnap(newStart);
             newEnd   = maybeSnap(newEnd);
 
-            // Build updated tasks
             const updatedTasks = tasks.map(t =>
                 t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
             );
             setTasks(updatedTasks);
         }
 
-        // DRAG ENTIRE BAR
         const dragBar = d3.drag()
             .on("start", function(event, d) {
                 d3.select(this).attr("stroke", "black");
@@ -97,14 +93,13 @@ function GanttCanvas() {
                 commitChanges(d, d3.select(this));
             });
 
-        // DRAG LEFT HANDLE
         const dragLeftHandle = d3.drag()
             .on("start", function(event, d) {
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
                 d.__rightX = scale(d.end);
             })
             .on("drag", function(event, d) {
-                const bar = d3.select(this.parentNode).select("rect.task-bar");
+                const bar  = d3.select(this.parentNode).select("rect.task-bar");
                 const text = d3.select(this.parentNode).select("text.task-label");
 
                 let rawLeftX = event.x;
@@ -113,7 +108,7 @@ function GanttCanvas() {
                 const snappedX = scale(proposedDate);
 
                 const w = d.__rightX - snappedX;
-                if (w < 0) return; // avoid negative widths
+                if (w < 0) return;
 
                 bar.attr("x", snappedX).attr("width", w);
                 text.attr("x", snappedX + 10);
@@ -124,7 +119,6 @@ function GanttCanvas() {
                 commitChanges(d, bar);
             });
 
-        // DRAG RIGHT HANDLE
         const dragRightHandle = d3.drag()
             .on("start", function(event, d) {
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
@@ -149,7 +143,7 @@ function GanttCanvas() {
                 commitChanges(d, bar);
             });
 
-        // Attach the drags
+        // Attach the main bar drag
         svg.selectAll(".task-bar").call(dragBar);
 
         // Create invisible left/right handles
@@ -183,9 +177,93 @@ function GanttCanvas() {
                 .style("cursor", "ew-resize");
         });
 
-        // Attach handle drags
         svg.selectAll(".task-handle-left").call(dragLeftHandle);
         svg.selectAll(".task-handle-right").call(dragRightHandle);
+
+        // ------------------------------------------------------
+        // 3) DRAW DEPENDENCIES:
+        //    If a "sourceTask" has dependencies: [{id: X}, ...],
+        //    we draw a line from sourceTask (right edge) to that
+        //    "X" task's left edge.
+        // ------------------------------------------------------
+        // a) Define arrow marker in <defs>
+        let defs = svg.select("defs");
+        if (!defs.size()) defs = svg.append("defs");
+        defs.selectAll("#arrowhead").remove();
+        defs
+            .append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 8)
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", "#555");
+
+        // b) A separate layer for lines
+        svg.selectAll("g.dependency-layer").remove();
+        const depLayer = svg.append("g").attr("class", "dependency-layer");
+
+        // c) For quick lookups
+        const tasksById = new Map(tasks.map(t => [t.id, t]));
+
+        // d) Build a path with a short horizontal offset from each edge + a smooth curve
+        const offset = 20; // horizontal offset at each end
+        function getDependencyPath(sx, sy, tx, ty) {
+            // We'll do:
+            //   M(sx, sy)         (start at source edge)
+            //   H(sx + offset)    short horizontal segment
+            //   C(...)            smooth S-curve
+            //   H(tx)             final horizontal into target
+            const innerStartX = sx + offset;
+            const innerEndX   = tx - offset;
+            // midpoint for control points
+            const midX        = innerStartX + (innerEndX - innerStartX) / 2;
+
+            return `
+                M${sx},${sy}
+                H${innerStartX}
+                C${midX},${sy}
+                 ${midX},${ty}
+                 ${innerEndX},${ty}
+                H${tx}
+            `;
+        }
+
+        // e) For each task that has dependencies, draw line from the "task" → each "dep.id"
+        tasks.forEach((sourceTask, i) => {
+            if (!Array.isArray(sourceTask.dependencies)) return;
+
+            const sourceX = scale(sourceTask.end); // right edge
+            const sourceY = i * defaults.rowHeight + defaults.rowHeight * 0.5;
+
+            sourceTask.dependencies.forEach(dep => {
+                const targetTask = tasksById.get(dep.id);
+                if (!targetTask) return;
+
+                const targetIndex = tasks.findIndex(t => t.id === dep.id);
+                if (targetIndex < 0) return;
+
+                // left edge
+                const targetX = scale(targetTask.start);
+                const targetY = targetIndex * defaults.rowHeight + defaults.rowHeight * 0.5;
+
+                // Build the path
+                const pathData = getDependencyPath(sourceX, sourceY, targetX, targetY);
+
+                depLayer
+                    .append("path")
+                    .attr("d", pathData)
+                    .attr("fill", "none")
+                    .attr("stroke", "#555")
+                    .attr("stroke-width", 1.5)
+                    .attr("stroke-dasharray", "4 2")
+                    .attr("marker-end", "url(#arrowhead)");
+            });
+        });
 
     }, [timeRanges, tasks, scale, width, defaults, setTasks]);
 
