@@ -1,552 +1,352 @@
-// src\components\Gantt\ganttHelpers.js
+// src/components/Gantt/ganttHelpers.js
 import * as d3 from "d3";
 
-const timeHelper = (function () {
+const timeHelper = (() => {
+    // Month/Day names
+    const shortDays = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const longDays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const shortMonths = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const longMonths = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-    function getStartOfDay(date) {
-        if (!(date instanceof Date) || isNaN(date)) return null;
-        const start = new Date(date.getTime());
-        start.setHours(0, 0, 0, 0);
-        return start;
+    // Start/end of day
+    function getStartOfDay(d) {
+        if (!(d instanceof Date) || isNaN(d)) return null;
+        const r = new Date(d);
+        r.setHours(0,0,0,0);
+        return r;
+    }
+    function getEndOfDay(d) {
+        if (!(d instanceof Date) || isNaN(d)) return null;
+        const r = new Date(d);
+        r.setHours(23,59,59,999);
+        return r;
     }
 
-    function getEndOfDay(date) {
-        if (!(date instanceof Date) || isNaN(date)) return null;
-        const end = new Date(date.getTime());
-        end.setHours(23, 59, 59, 999);
-        return end;
+    // Utility
+    function pad(num, size) {
+        return (`0000${num}`).slice(-size);
     }
 
+    // Custom date formatter
     function formatDate(date, format) {
         if (!(date instanceof Date)) return "";
-
-        const day = date.getDate();
-        const dayOfWeek = date.getDay();
-        const month = date.getMonth();
-        const year = date.getFullYear();
-        const hour24 = date.getHours();
-        const minute = date.getMinutes();
-        const second = date.getSeconds();
-        const ms = date.getMilliseconds();
-        const hour12 = hour24 % 12 || 12;
-        const ampm = hour24 < 12 ? "AM" : "PM";
-
-        const shortDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const longDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-        const shortMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const longMonths = ["January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"];
-
-        function pad(num, size) {
-            const s = "0000" + num;
-            return s.slice(-size);
-        }
+        const y = date.getFullYear(),
+            mon = date.getMonth(),
+            day = date.getDate(),
+            dow = date.getDay(),
+            h24 = date.getHours(),
+            m = date.getMinutes(),
+            s = date.getSeconds(),
+            ms = date.getMilliseconds(),
+            h12 = h24 % 12 || 12,
+            ampm = h24 < 12 ? "AM" : "PM";
 
         return format.replace(
             /(yyyy|yyy|yy|y|MMMM|MMM|MM|M|dddd|ddd|dd|d|HH|H|hh|h|mm|m|ss|s|fff|ff|f|tt|t)/g,
             token => {
                 switch (token) {
                     // Year
-                    case "yyyy":
-                        return String(year);
-                    case "yyy":
-                        return String(year);
-                    case "yy":
-                        return String(year).slice(-2);
-                    case "y":
-                        return String(year).slice(-1);
-
+                    case "yyyy": case "yyy": return y;
+                    case "yy": return String(y).slice(-2);
+                    case "y":  return String(y).slice(-1);
                     // Month
-                    case "MMMM":
-                        return longMonths[month];
-                    case "MMM":
-                        return shortMonths[month];
-                    case "MM":
-                        return pad(month + 1, 2);
-                    case "M":
-                        return String(month + 1);
-
+                    case "MMMM": return longMonths[mon];
+                    case "MMM":  return shortMonths[mon];
+                    case "MM":   return pad(mon + 1, 2);
+                    case "M":    return mon + 1;
                     // Day
-                    case "dddd":
-                        return longDays[dayOfWeek];
-                    case "ddd":
-                        return shortDays[dayOfWeek];
-                    case "dd":
-                        return pad(day, 2);
-                    case "d":
-                        return String(day);
-
+                    case "dddd": return longDays[dow];
+                    case "ddd":  return shortDays[dow];
+                    case "dd":   return pad(day, 2);
+                    case "d":    return day;
                     // 24-hour
-                    case "HH":
-                        return pad(hour24, 2);
-                    case "H":
-                        return String(hour24);
-
+                    case "HH":   return pad(h24, 2);
+                    case "H":    return h24;
                     // 12-hour
-                    case "hh":
-                        return pad(hour12, 2);
-                    case "h":
-                        return String(hour12);
-
+                    case "hh":   return pad(h12, 2);
+                    case "h":    return h12;
                     // Minute
-                    case "mm":
-                        return pad(minute, 2);
-                    case "m":
-                        return String(minute);
-
+                    case "mm":   return pad(m, 2);
+                    case "m":    return m;
                     // Second
-                    case "ss":
-                        return pad(second, 2);
-                    case "s":
-                        return String(second);
-
+                    case "ss":   return pad(s, 2);
+                    case "s":    return s;
                     // Fractional second
-                    case "fff":
-                        return pad(ms, 3);
-                    case "ff":
-                        return pad(Math.floor(ms / 10), 2);
-                    case "f":
-                        return String(Math.floor(ms / 100));
-
+                    case "fff":  return pad(ms, 3);
+                    case "ff":   return pad(Math.floor(ms / 10), 2);
+                    case "f":    return Math.floor(ms / 100);
                     // AM/PM
-                    case "tt":
-                        return ampm;
-                    case "t":
-                        return ampm.charAt(0);
-
-                    default:
-                        return token;
+                    case "tt":   return ampm;
+                    case "t":    return ampm.charAt(0);
+                    default:     return token;
                 }
             }
         );
     }
 
-    // Just a map for incrementing days if needed
-    const incrementMap = {
-        "1w": (d) => d.setDate(d.getDate() + 1),
-        "2w": (d) => d.setDate(d.getDate() + 1),
-    };
+    // Both keys increment by 1 day (per original code)
+    const incrementDay = d => d.setDate(d.getDate() + 1);
 
     return {
-        formatDate,
         getStartOfDay,
         getEndOfDay,
-        incrementMap,
+        formatDate,
+        incrementMap: { "1w": incrementDay, "2w": incrementDay },
     };
 })();
 
-const ganttHelpers = (function () {
-
+const ganttHelpers = (() => {
     function countTasksTimeRange(tasks) {
-        if (!tasks || !tasks.length) return { start: null, end: null };
-        let start = tasks[0].start;
-        let end = tasks[0].end;
-        tasks.forEach(task => {
-            if (task.start < start) start = task.start;
-            if (task.end > end) end = task.end;
+        if (!Array.isArray(tasks) || !tasks.length) return { start: null, end: null };
+        let [start, end] = [tasks[0].start, tasks[0].end];
+        tasks.forEach(t => {
+            if (t.start < start) start = t.start;
+            if (t.end > end) end = t.end;
         });
         return { start, end };
     }
-
     return { timeHelper, countTasksTimeRange };
 })();
 
-export const drawHelper = (function () {
-
-    function getTimeMarks(timeRange, mode) {
-        const { start, end } = timeRange;
-        const rangeStart = ganttHelpers.timeHelper.getStartOfDay(start);
-        const rangeEnd = ganttHelpers.timeHelper.getEndOfDay(end);
-
-        if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-            console.error("[getTimeMarks] Invalid range");
-            return [];
-        }
-        const incrementFn = ganttHelpers.timeHelper.incrementMap[mode];
-        if (typeof incrementFn !== "function") {
-            console.error("[getTimeMarks] Unknown mode", mode);
-            return [];
-        }
-        const marks = [];
-        const current = new Date(rangeStart);
-        while (current <= rangeEnd) {
-            marks.push(new Date(current));
-            incrementFn(current);
-        }
-        return marks;
+export const drawHelper = (() => {
+    // Marks calculation
+    function getTimeMarks({ start, end }, mode) {
+        const s = ganttHelpers.timeHelper.getStartOfDay(start),
+            e = ganttHelpers.timeHelper.getEndOfDay(end),
+            incFn = ganttHelpers.timeHelper.incrementMap[mode];
+        if (!s || !e || s > e || typeof incFn !== "function") return [];
+        const result = [], cur = new Date(s);
+        while (cur <= e) { result.push(new Date(cur)); incFn(cur); }
+        return result;
     }
 
-    function drawRuler(scale, svg, timeRanges, defaults, mode = "1w") {
-        if (!scale || !svg || !timeRanges?.start || !timeRanges?.end) return;
+    // Ruler lines & labels
+    function drawRuler(scale, svg, range, cfg, mode="1w") {
+        if (!scale || !svg || !range?.start || !range?.end) return;
+        const marks = getTimeMarks(range, mode),
+            halfCol = cfg.columnWidth * 0.5;
 
-        const halfColumnWidth = defaults.columnWidth * 0.5;
-        const timeMarks = getTimeMarks(timeRanges, mode);
+        const groups = svg.selectAll(".large-mark").data(marks).join("g").attr("class","large-mark");
+        groups.append("line")
+            .attr("class","ruler-line large-mark-line")
+            .attr("x1", d => scale(d)).attr("y1", cfg.rulerHeight)
+            .attr("x2", d => scale(d)).attr("y2", cfg.rulerHeight)
+            .attr("stroke","black").attr("stroke-width",1);
 
-        // Ruler lines + text
-        const largeGroups = svg
-            .selectAll(".large-mark")
-            .data(timeMarks)
-            .join("g")
-            .attr("class", "large-mark");
-
-        largeGroups.append("line")
-            .attr("class", "ruler-line large-mark-line")
-            .attr("x1", d => scale(d))
-            .attr("y1", defaults.rulerHeight)
-            .attr("x2", d => scale(d))
-            .attr("y2", defaults.rulerHeight)
-            .attr("stroke", "black")
-            .attr("stroke-width", 1);
-
-        largeGroups.append("text")
-            .attr("class", "ruler-text large-mark-text")
-            .attr("x", d => scale(d) + halfColumnWidth)
-            .attr("y", defaults.rulerHeight * 0.5)
-            .attr("dominant-baseline", "middle")
-            .attr("text-anchor", "middle")
-            .attr("font-size", "18px")
-            .attr("font-family", "Roboto")
+        groups.append("text")
+            .attr("class","ruler-text large-mark-text")
+            .attr("x", d => scale(d) + halfCol)
+            .attr("y", cfg.rulerHeight * 0.5)
+            .attr("dominant-baseline","middle")
+            .attr("text-anchor","middle")
+            .attr("font-size","18px")
+            .attr("font-family","Roboto")
             .text(d => timeHelper.formatDate(d, "d ddd").toUpperCase());
     }
 
-    function drawCanvas(scale, svg, timeRanges, defaults, tasks, mode = "1w") {
-        if (!svg || !timeRanges || !defaults) return;
+    // Main canvas grid & tasks
+    function drawCanvas(scale, svg, range, cfg, tasks, mode="1w") {
+        if (!svg || !range || !cfg) return;
+        const marks = getTimeMarks(range, mode),
+            w = cfg.columnWidth * marks.length,
+            h = cfg.rowHeight * tasks.length;
+        svg.attr("width", w).attr("height", h);
 
-        const timeMarks = getTimeMarks(timeRanges, mode);
-        const width = defaults.columnWidth * timeMarks.length;
-        const height = defaults.rowHeight * tasks.length;
+        // Grid lines
+        const grid = svg.selectAll(".canvas-grid").data(marks).join("g").attr("class","canvas-grid");
+        // Vertical
+        grid.append("line")
+            .attr("x1", d => scale(d)).attr("y1", 0)
+            .attr("x2", d => scale(d)).attr("y2", h)
+            .attr("stroke","#ccc").attr("stroke-width",1);
+        // Horizontal
+        grid.append("line")
+            .attr("x1", 0).attr("y1",(d,i) => i * cfg.rowHeight)
+            .attr("x2", w).attr("y2",(d,i) => i * cfg.rowHeight)
+            .attr("stroke","#ccc").attr("stroke-width",1);
 
-        svg.attr("width", width);
-        svg.attr("height", height);
+        // Task bars
+        const gap = 0.2 * cfg.rowHeight;
+        const gTask = svg.selectAll(".task-group").data(tasks).join("g").attr("class","task-group");
 
-        // GRID LINES
-        const group = svg
-            .selectAll(".canvas-grid")
-            .data(timeMarks)
-            .join("g")
-            .attr("class", "canvas-grid");
-
-        // Vertical lines
-        group.append("line")
-            .attr("x1", d => scale(d))
-            .attr("y1", 0)
-            .attr("x2", d => scale(d))
-            .attr("y2", height)
-            .attr("stroke", "#ccc")
-            .attr("stroke-width", 1);
-
-        // Horizontal lines
-        group.append("line")
-            .attr("x1", 0)
-            .attr("y1", (d, i) => i * defaults.rowHeight)
-            .attr("x2", width)
-            .attr("y2", (d, i) => i * defaults.rowHeight)
-            .attr("stroke", "#ccc")
-            .attr("stroke-width", 1);
-
-        // TASK BARS + TEXT
-        const gap = 0.2 * defaults.rowHeight;
-        const taskGroup = svg
-            .selectAll(".task-group")
-            .data(tasks)
-            .join("g")
-            .attr("class", "task-group");
-
-        // Rectangular bar
-        taskGroup.append("rect")
-            .attr("class", "task-bar")
+        gTask.append("rect")
+            .attr("class","task-bar")
             .attr("x", d => scale(d.start))
-            .attr("y", (d, i) => i * defaults.rowHeight + gap)
+            .attr("y",(d,i) => i * cfg.rowHeight + gap)
             .attr("width", d => scale(d.end) - scale(d.start))
-            .attr("height", defaults.rowHeight - gap * 2)
-            .attr("rx", 2)
-            .attr("fill", "#3497d9")
+            .attr("height", cfg.rowHeight - gap*2)
+            .attr("rx",2)
+            .attr("fill","#3497d9")
             .attr("stroke", d => d3.color("#3497d9").darker(0.5))
-            .attr("stroke-width", 1)
-            .style("filter", "drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.2))");
+            .attr("stroke-width",1)
+            .style("filter","drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.2))");
 
-        // Text label
-        taskGroup.append("text")
+        gTask.append("text")
             .attr("class", d => `task-label task-label-${d.id}`)
             .attr("x", d => scale(d.start) + 10)
-            .attr("y", (d, i) => i * defaults.rowHeight + (defaults.rowHeight / 2) + 5)
-            .attr("fill", "white")
-            .attr("font-size", "15px")
-            .attr("font-family", "Roboto")
-            .attr("font-weight", 500)
-            .attr("pointer-events", "none")
-            .attr("filter", "drop-shadow(0px 1px 1px rgba(0,0,0,0.3))")
+            .attr("y",(d,i) => i * cfg.rowHeight + (cfg.rowHeight / 2) + 5)
+            .attr("fill","white")
+            .attr("font-size","15px")
+            .attr("font-family","Roboto")
+            .attr("font-weight",500)
+            .attr("pointer-events","none")
+            .attr("filter","drop-shadow(0px 1px 1px rgba(0,0,0,0.3))")
             .text(d => d.name);
     }
 
-    // Helper to snap a date if needed
-    function maybeSnap(date, snapEnabled, snapIncrement) {
-        if (!snapEnabled) return date;
-
-        const incrementMs = snapIncrement;
-        const localMidnight = new Date(
-            date.getFullYear(),
-            date.getMonth(),
-            date.getDate()
-        );
-        const offsetFromMidnight = date.getTime() - localMidnight.getTime();
-        const remainder = offsetFromMidnight % incrementMs;
-        const half = incrementMs / 2;
-
-        let snappedOffset;
-        if (remainder >= half) {
-            snappedOffset = offsetFromMidnight + (incrementMs - remainder);
-        } else {
-            snappedOffset = offsetFromMidnight - remainder;
-        }
-        return new Date(localMidnight.getTime() + snappedOffset);
+    // Optional snapping
+    function maybeSnap(date, snap, inc) {
+        if (!snap) return date;
+        const ms = inc, mid = new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+            off = date.getTime() - mid.getTime(),
+            rem = off % ms,
+            half = ms / 2;
+        return new Date(mid.getTime() + (rem >= half ? off + (ms - rem) : off - rem));
     }
 
-    /**
-     * Draw everything in the main Gantt canvas:
-     *   - Grid lines
-     *   - Task bars & labels
-     *   - Drag/resize behavior
-     *   - Dependencies
-     */
-    function drawEverything({
-                                svg,
-                                scale,
-                                timeRanges,
-                                defaults,
-                                tasks,
-                                width,
-                                snapEnabled,
-                                snapIncrement,
-                                setTasks,
-                            }) {
-        // Clear the SVG
+    // Draw entire Gantt (grid, tasks, drag/resize, dependencies)
+    function drawEverything({ svg, scale, timeRanges, defaults, tasks, width, snapEnabled, snapIncrement, setTasks }) {
         svg.selectAll("*").remove();
+        const totalH = defaults.rowHeight * tasks.length;
+        svg.attr("width", width).attr("height", totalH);
 
-        // Set size based on tasks
-        const totalHeight = defaults.rowHeight * tasks.length;
-        svg.attr("width", width).attr("height", totalHeight);
-
-        // 1) Draw the grid + tasks
+        // 1) Grid + tasks
         drawCanvas(scale, svg, timeRanges, defaults, tasks, "2w");
 
-        // 2) Drag/Resize logic
-        function commitChanges(d, barSelection) {
-            const finalX = parseFloat(barSelection.attr("x"));
-            const finalW = parseFloat(barSelection.attr("width"));
-
-            let newStart = scale.invert(finalX);
-            let newEnd = scale.invert(finalX + finalW);
-
+        // 2) Drag/resize logic
+        function commitChanges(d, sel) {
+            const x = parseFloat(sel.attr("x")),
+                w = parseFloat(sel.attr("width"));
+            let newStart = scale.invert(x),
+                newEnd   = scale.invert(x + w);
             newStart = maybeSnap(newStart, snapEnabled, snapIncrement);
-            newEnd = maybeSnap(newEnd, snapEnabled, snapIncrement);
-
-            const updatedTasks = tasks.map(t =>
-                t.id === d.id ? { ...t, start: newStart, end: newEnd } : t
-            );
-            setTasks(updatedTasks);
+            newEnd   = maybeSnap(newEnd, snapEnabled, snapIncrement);
+            setTasks(tasks.map(t => t.id === d.id ? { ...t, start: newStart, end: newEnd } : t));
         }
 
-        // Main bar drag
+        // Drag entire bar
         const dragBar = d3.drag()
-            .on("start", function (event, d) {
-                d3.select(this).attr("stroke", "black");
-                d.__offsetX = event.x - parseFloat(d3.select(this).attr("x"));
+            .on("start", function(e, d) {
+                d3.select(this).attr("stroke","black");
+                d.__offsetX = e.x - parseFloat(d3.select(this).attr("x"));
             })
-            .on("drag", function (event, d) {
-                const bar = d3.select(this);
-                const rawX = event.x - d.__offsetX;
-
-                let proposedDate = scale.invert(rawX);
-                proposedDate = maybeSnap(proposedDate, snapEnabled, snapIncrement);
-                const snappedX = scale(proposedDate);
-
-                bar.attr("x", snappedX);
-                d3.select(this.parentNode)
-                    .select("text.task-label")
-                    .attr("x", snappedX + 10);
+            .on("drag", function(e, d) {
+                const bar = d3.select(this),
+                    rawX = e.x - d.__offsetX,
+                    snapped = maybeSnap(scale.invert(rawX), snapEnabled, snapIncrement);
+                bar.attr("x", scale(snapped));
+                d3.select(this.parentNode).select("text.task-label").attr("x", scale(snapped) + 10);
             })
-            .on("end", function (event, d) {
+            .on("end", function(e, d) {
                 d3.select(this).attr("stroke", null);
                 commitChanges(d, d3.select(this));
             });
 
-        const dragLeftHandle = d3.drag()
-            .on("start", function (event, d) {
-                d3.select(this.parentNode)
-                    .select("rect.task-bar")
-                    .attr("stroke", "black");
-                d.__rightX = scale(d.end);
+        // Drag left handle
+        const dragLeft = d3.drag()
+            .on("start", function() {
+                d3.select(this.parentNode).select("rect.task-bar").attr("stroke","black");
             })
-            .on("drag", function (event, d) {
-                const bar = d3.select(this.parentNode).select("rect.task-bar");
-                const text = d3.select(this.parentNode).select("text.task-label");
-
-                let rawLeftX = event.x;
-                let proposedDate = scale.invert(rawLeftX);
-                proposedDate = maybeSnap(proposedDate, snapEnabled, snapIncrement);
-                const snappedX = scale(proposedDate);
-
-                const w = d.__rightX - snappedX;
-                if (w < 0) return;
-
-                bar.attr("x", snappedX).attr("width", w);
-                text.attr("x", snappedX + 10);
+            .on("drag", function(e, d) {
+                const bar = d3.select(this.parentNode).select(".task-bar"),
+                    txt = d3.select(this.parentNode).select(".task-label"),
+                    rawL = e.x,
+                    snapped = maybeSnap(scale.invert(rawL), snapEnabled, snapIncrement),
+                    leftX = scale(snapped),
+                    rightX = scale(d.end),
+                    w = rightX - leftX;
+                if (w > 0) {
+                    bar.attr("x", leftX).attr("width", w);
+                    txt.attr("x", leftX + 10);
+                }
             })
-            .on("end", function (event, d) {
-                d3.select(this.parentNode)
-                    .select("rect.task-bar")
-                    .attr("stroke", null);
-
-                const bar = d3.select(this.parentNode).select("rect.task-bar");
-                commitChanges(d, bar);
+            .on("end", function(e, d) {
+                d3.select(this.parentNode).select("rect.task-bar").attr("stroke", null);
+                commitChanges(d, d3.select(this.parentNode).select("rect.task-bar"));
             });
 
-        const dragRightHandle = d3.drag()
-            .on("start", function (event, d) {
-                d3.select(this.parentNode)
-                    .select("rect.task-bar")
-                    .attr("stroke", "black");
-                d.__leftX = scale(d.start);
+        // Drag right handle
+        const dragRight = d3.drag()
+            .on("start", function() {
+                d3.select(this.parentNode).select("rect.task-bar").attr("stroke","black");
             })
-            .on("drag", function (event, d) {
-                const bar = d3.select(this.parentNode).select("rect.task-bar");
-
-                let rawRightX = event.x;
-                let proposedDate = scale.invert(rawRightX);
-                proposedDate = maybeSnap(proposedDate, snapEnabled, snapIncrement);
-                const snappedRightX = scale(proposedDate);
-
-                const newW = snappedRightX - d.__leftX;
-                if (newW < 0) return;
-
-                bar.attr("width", newW);
+            .on("drag", function(e, d) {
+                const bar = d3.select(this.parentNode).select(".task-bar"),
+                    rawR = e.x,
+                    snapped = maybeSnap(scale.invert(rawR), snapEnabled, snapIncrement),
+                    rightX = scale(snapped),
+                    leftX = scale(d.start),
+                    w = rightX - leftX;
+                if (w > 0) bar.attr("width", w);
             })
-            .on("end", function (event, d) {
-                d3.select(this.parentNode)
-                    .select("rect.task-bar")
-                    .attr("stroke", null);
-
-                const bar = d3.select(this.parentNode).select("rect.task-bar");
-                commitChanges(d, bar);
+            .on("end", function(e, d) {
+                d3.select(this.parentNode).select("rect.task-bar").attr("stroke", null);
+                commitChanges(d, d3.select(this.parentNode).select("rect.task-bar"));
             });
 
         // Attach drags
         svg.selectAll(".task-bar").call(dragBar);
 
-        // Create invisible handles for resizing
-        const handleWidth = 8;
-        svg.selectAll(".task-group").each(function (d) {
-            const group = d3.select(this);
-            const bar = group.select("rect.task-bar");
-            const x = parseFloat(bar.attr("x"));
-            const w = parseFloat(bar.attr("width"));
-            const y = parseFloat(bar.attr("y"));
-            const h = parseFloat(bar.attr("height"));
-
-            // Left handle
-            group.append("rect")
-                .attr("class", "task-handle-left")
-                .attr("x", x - handleWidth / 2)
-                .attr("y", y)
-                .attr("width", handleWidth)
-                .attr("height", h)
-                .attr("fill", "transparent")
-                .style("cursor", "ew-resize");
-
-            // Right handle
-            group.append("rect")
-                .attr("class", "task-handle-right")
-                .attr("x", x + w - handleWidth / 2)
-                .attr("y", y)
-                .attr("width", handleWidth)
-                .attr("height", h)
-                .attr("fill", "transparent")
-                .style("cursor", "ew-resize");
+        // Invisible handles
+        const handleW = 8;
+        svg.selectAll(".task-group").each(function(d) {
+            const g = d3.select(this),
+                bar = g.select("rect.task-bar"),
+                x = +bar.attr("x"),
+                w = +bar.attr("width"),
+                y = +bar.attr("y"),
+                h = +bar.attr("height");
+            g.append("rect")
+                .attr("class","task-handle-left")
+                .attr("x", x - handleW/2).attr("y", y)
+                .attr("width", handleW).attr("height", h)
+                .attr("fill","transparent").style("cursor","ew-resize");
+            g.append("rect")
+                .attr("class","task-handle-right")
+                .attr("x", x + w - handleW/2).attr("y", y)
+                .attr("width", handleW).attr("height", h)
+                .attr("fill","transparent").style("cursor","ew-resize");
         });
-
-        svg.selectAll(".task-handle-left").call(dragLeftHandle);
-        svg.selectAll(".task-handle-right").call(dragRightHandle);
+        svg.selectAll(".task-handle-left").call(dragLeft);
+        svg.selectAll(".task-handle-right").call(dragRight);
 
         // 3) Dependencies
-        // Define arrow marker
         let defs = svg.select("defs");
         if (!defs.size()) defs = svg.append("defs");
         defs.selectAll("#arrowhead").remove();
-        defs
-            .append("marker")
-            .attr("id", "arrowhead")
-            .attr("viewBox", "0 -5 10 10")
-            .attr("refX", 8)
-            .attr("refY", 0)
-            .attr("markerWidth", 6)
-            .attr("markerHeight", 6)
-            .attr("orient", "auto")
-            .append("path")
-            .attr("d", "M0,-5L10,0L0,5")
-            .attr("fill", "#555");
+        defs.append("marker")
+            .attr("id","arrowhead").attr("viewBox","0 -5 10 10")
+            .attr("refX",8).attr("refY",0)
+            .attr("markerWidth",6).attr("markerHeight",6)
+            .attr("orient","auto")
+            .append("path").attr("d","M0,-5L10,0L0,5").attr("fill","#555");
 
-        // A separate layer for lines
-        svg.selectAll("g.dependency-layer").remove();
-        const depLayer = svg.append("g").attr("class", "dependency-layer");
-
-        // Quick lookups
+        const depLayer = svg.append("g").attr("class","dependency-layer");
         const tasksById = new Map(tasks.map(t => [t.id, t]));
-
-        // Build a path with short horizontal offsets + a curve
         const offset = 20;
-        function getDependencyPath(sx, sy, tx, ty) {
-            // We'll do an 'S'-shaped curve with small horizontal segments
-            const innerStartX = sx + offset;
-            const innerEndX = tx - offset;
-            const midX = innerStartX + (innerEndX - innerStartX) / 2;
-            return `
-                M${sx},${sy}
-                H${innerStartX}
-                C${midX},${sy}
-                 ${midX},${ty}
-                 ${innerEndX},${ty}
-                H${tx}
-            `;
+        function pathData(sx, sy, tx, ty) {
+            const inSx = sx + offset, inTx = tx - offset, midX = inSx + (inTx - inSx)/2;
+            return `M${sx},${sy}H${inSx}C${midX},${sy} ${midX},${ty} ${inTx},${ty}H${tx}`;
         }
 
-        // For each task with dependencies, draw lines
-        tasks.forEach((sourceTask, i) => {
-            if (!Array.isArray(sourceTask.dependencies)) return;
-
-            const sourceX = scale(sourceTask.end); // right edge
-            const sourceY = i * defaults.rowHeight + defaults.rowHeight * 0.5;
-
-            sourceTask.dependencies.forEach(dep => {
-                const targetTask = tasksById.get(dep.id);
-                if (!targetTask) return;
-
-                const targetIndex = tasks.findIndex(t => t.id === dep.id);
-                if (targetIndex < 0) return;
-
-                const targetX = scale(targetTask.start); // left edge
-                const targetY = targetIndex * defaults.rowHeight + defaults.rowHeight * 0.5;
-
-                const pathData = getDependencyPath(sourceX, sourceY, targetX, targetY);
-
-                depLayer
-                    .append("path")
-                    .attr("d", pathData)
-                    .attr("fill", "none")
-                    .attr("stroke", "#555")
-                    .attr("stroke-width", 1.5)
-                    .attr("stroke-dasharray", "4 2")
-                    .attr("marker-end", "url(#arrowhead)");
+        tasks.forEach((src, i) => {
+            if (!Array.isArray(src.dependencies)) return;
+            const sx = scale(src.end), sy = i * defaults.rowHeight + defaults.rowHeight*0.5;
+            src.dependencies.forEach(dep => {
+                const targ = tasksById.get(dep.id);
+                if (!targ) return;
+                const ti = tasks.findIndex(t => t.id === dep.id);
+                if (ti < 0) return;
+                const tx = scale(targ.start), ty = ti * defaults.rowHeight + defaults.rowHeight*0.5;
+                depLayer.append("path")
+                    .attr("d", pathData(sx, sy, tx, ty))
+                    .attr("fill","none").attr("stroke","#555").attr("stroke-width",1.5)
+                    .attr("stroke-dasharray","4 2").attr("marker-end","url(#arrowhead)");
             });
         });
     }
 
-    return {
-        drawRuler,
-        drawCanvas,
-        drawEverything,
-    };
+    return { drawRuler, drawCanvas, drawEverything };
 })();
 
 export default ganttHelpers;
