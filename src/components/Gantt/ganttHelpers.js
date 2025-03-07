@@ -3,27 +3,9 @@ import * as d3 from "d3";
 const timeHelper = function () {
 
     function getStartOfDay(date) {
-        // First, ensure 'date' is actually a Date object
-        // and is not 'Invalid Date'.
-        if (!(date instanceof Date) || isNaN(date)) {
-            return null;
-        }
-
-        // We clone the date to avoid mutating the original.
+        if (!(date instanceof Date) || isNaN(date)) return null;
         const start = new Date(date.getTime());
         start.setHours(0, 0, 0, 0);
-
-        return start;
-    }
-
-
-    function getStartOfDayUTC(date) {
-        if (!(date instanceof Date) || isNaN(date)) {
-            return null;
-        }
-
-        const start = new Date(date.getTime());
-        start.setUTCHours(0, 0, 0, 0);
         return start;
     }
 
@@ -33,7 +15,6 @@ const timeHelper = function () {
         end.setHours(23, 59, 59, 999);
         return end;
     }
-
 
     function formatDate(date, format) {
         if (!(date instanceof Date)) return "";
@@ -69,7 +50,7 @@ const timeHelper = function () {
                     case "yyyy":
                         return String(year);
                     case "yyy":
-                        return String(year); // .NET quirk
+                        return String(year);
                     case "yy":
                         return String(year).slice(-2);
                     case "y":
@@ -134,16 +115,13 @@ const timeHelper = function () {
                         return ampm.charAt(0);
 
                     default:
-                        return token; // Fallback if somehow no match
+                        return token;
                 }
             }
         );
     }
 
-
-    // Example usage:
-    //console.log(formatDate(now, "dddd, MMMM d, yyyy h:mm:ss tt")); // "Thursday, March 6, 2025 3:05:09 PM"
-
+    // Just a map for incrementing days if needed
     const incrementMap = {
         "1w": (d) => d.setDate(d.getDate() + 1),
         "2w": (d) => d.setDate(d.getDate() + 1),
@@ -152,7 +130,6 @@ const timeHelper = function () {
     return {
         formatDate,
         getStartOfDay,
-        getStartOfDayUTC,
         getEndOfDay,
         incrementMap,
     };
@@ -161,82 +138,55 @@ const timeHelper = function () {
 const ganttHelpers = function () {
 
     function countTasksTimeRange(tasks) {
-        if (!tasks) return {start: null, end: null};
-        if (!tasks.length) return {start: null, end: null};
-
+        if (!tasks || !tasks.length) return { start: null, end: null };
         let start = tasks[0].start;
         let end = tasks[0].end;
-
         tasks.forEach(task => {
             if (task.start < start) start = task.start;
             if (task.end > end) end = task.end;
         });
-
-        return {start, end};
+        return { start, end };
     }
 
-
-    return {timeHelper, countTasksTimeRange};
+    return { timeHelper, countTasksTimeRange };
 }();
 
 export const drawHelper = function () {
 
     function getTimeMarks(timeRange, mode) {
-        const {start, end} = timeRange;
-
-        // Convert to start-of-day / end-of-day
+        const { start, end } = timeRange;
         const rangeStart = ganttHelpers.timeHelper.getStartOfDay(start);
         const rangeEnd = ganttHelpers.timeHelper.getEndOfDay(end);
 
-        // Validate we have a proper range
         if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-            console.error("[getTimeMarks] Invalid time range");
+            console.error("[getTimeMarks] Invalid range");
             return [];
         }
-
-
-        // Retrieve the increment function associated with the mode.
         const incrementFn = ganttHelpers.timeHelper.incrementMap[mode];
         if (typeof incrementFn !== "function") {
             console.error("[getTimeMarks] Unknown mode", mode);
             return [];
         }
-
         const marks = [];
-        // We'll iterate forward from rangeStart until we surpass rangeEnd
         const current = new Date(rangeStart);
-
         while (current <= rangeEnd) {
-            // Push a clone of 'current' into the array
             marks.push(new Date(current));
-            // Advance 'current' by the appropriate step
             incrementFn(current);
         }
-
         return marks;
     }
 
     function drawRuler(scale, svg, timeRanges, defaults, mode = "1w") {
-        // Basic guards
-        if (!scale || !svg || !mode || !defaults) return;
-        if (!timeRanges?.start || !timeRanges?.end) return;
-
+        if (!scale || !svg || !timeRanges?.start || !timeRanges?.end) return;
         const halfColumnWidth = defaults.columnWidth * 0.5;
-
-        // Get arrays of ticks
         const timeMarks = getTimeMarks(timeRanges, mode);
 
-        // Create a selection for the large marks
-        // 1) Bind the array (marksLarge) to a group (.large-mark)
-        // 2) Append a <line> for each datum
-        // 3) Append a <text> for each datum
         const largeGroups = svg
-            .selectAll(".large-mark")           // select any existing
-            .data(timeMarks)                  // bind data
-            .join("g")                         // handle enter/update/exit
-            .attr("class", "large-mark");    // set class on the newly added groups
+            .selectAll(".large-mark")
+            .data(timeMarks)
+            .join("g")
+            .attr("class", "large-mark");
 
-        // Append the “major” tick line
         largeGroups.append("line")
             .attr("class", "ruler-line large-mark-line")
             .attr("x1", d => scale(d))
@@ -246,45 +196,50 @@ export const drawHelper = function () {
             .attr("stroke", "black")
             .attr("stroke-width", 1);
 
-        // Append the corresponding label text
         largeGroups.append("text")
             .attr("class", "ruler-text large-mark-text")
             .attr("x", d => scale(d) + halfColumnWidth)
             .attr("y", defaults.rulerHeight * 0.5)
-            // .attr("dy", "1em")
-            .attr("dominant-baseline", "middle") // Add this
+            .attr("dominant-baseline", "middle")
             .attr("text-anchor", "middle")
             .attr("font-size", "18px")
             .attr("font-family", "Roboto")
-            .text(d => ganttHelpers.timeHelper.formatDate(d, "d ddd").toUpperCase());
+            .text(d => timeHelper.formatDate(d, "d ddd").toUpperCase());
     }
 
-    function utcOffset(date) {
-        return new Date(date.getTime() + date.getTimezoneOffset() * 60000);
-    }
-
+    /**
+     * Draws vertical/horizontal grid lines,
+     * then for each task draws a <g.task-group> containing:
+     *   - a <rect.task-bar>
+     *   - a <text.task-label>
+     */
     function drawCanvas(scale, svg, timeRanges, defaults, tasks, mode = "1w") {
         if (!svg || !timeRanges || !defaults) return;
+
         const timeMarks = getTimeMarks(timeRanges, mode);
         const width = defaults.columnWidth * timeMarks.length;
         const height = defaults.rowHeight * tasks.length;
+
         svg.attr("width", width);
         svg.attr("height", height);
 
+        // GRID LINES
         const group = svg
             .selectAll(".canvas-grid")
             .data(timeMarks)
             .join("g")
             .attr("class", "canvas-grid");
 
+        // Vertical lines
         group.append("line")
-            .attr("x1", (d, i) => scale(d))
+            .attr("x1", d => scale(d))
             .attr("y1", 0)
-            .attr("x2", (d, i) => scale(d))
+            .attr("x2", d => scale(d))
             .attr("y2", height)
             .attr("stroke", "#ccc")
             .attr("stroke-width", 1);
 
+        // Horizontal lines for each row (just reuse i from .data())
         group.append("line")
             .attr("x1", 0)
             .attr("y1", (d, i) => i * defaults.rowHeight)
@@ -293,6 +248,7 @@ export const drawHelper = function () {
             .attr("stroke", "#ccc")
             .attr("stroke-width", 1);
 
+        // TASK BARS + TEXT in single <g>
         const gap = 0.2 * defaults.rowHeight;
 
         const taskGroup = svg
@@ -300,40 +256,37 @@ export const drawHelper = function () {
             .data(tasks)
             .join("g")
             .attr("class", "task-group");
+
+        // The rectangular bar
         taskGroup.append("rect")
             .attr("class", "task-bar")
-            .attr("x", d => scale(utcOffset(d.start)))
+            // Use EXACT same scale(d.start) for x
+            .attr("x", d => scale(d.start))
             .attr("y", (d, i) => i * defaults.rowHeight + gap)
-            .attr("width", d => scale(utcOffset(d.end)) - scale(utcOffset(d.start)))
+            .attr("width", d => scale(d.end) - scale(d.start))
             .attr("height", defaults.rowHeight - gap * 2)
             .attr("rx", 2)
-            // .attr("ry", 2)
             .attr("fill", "#3497d9")
             .attr("stroke", d => d3.color("#3497d9").darker(0.5))
             .attr("stroke-width", 1)
             .style("filter", "drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.2))");
 
-
-        const taskTextGroup = svg
-            .selectAll(".task-text-group")
-            .data(tasks)
-            .join("g")
-            .attr("class", "task-text-group");
-
-        taskTextGroup.append("text")
-            .attr('class', d => `task-label task-label-${d.id}`) // Class with unique ID for updates
-            .attr('x', d => scale(d.start) + 10) // 10px padding from left edge
-            .attr('y', (_, i) => i * defaults.rowHeight + defaults.rowHeight / 2 + 5) // Vertically centered with slight adjustment
-            .attr('fill', 'white') // White text
-            .attr('font-size', '15px') // Slightly larger for readability
+        // The text label
+        taskGroup.append("text")
+            .attr("class", d => `task-label task-label-${d.id}`)
+            // Also use scale(d.start), but +10 for a left padding
+            .attr("x", d => scale(d.start) + 10)
+            .attr("y", (d, i) => i * defaults.rowHeight + defaults.rowHeight / 2 + 5)
+            .attr("fill", "white")
+            .attr("font-size", "15px")
             .attr("font-family", "Roboto")
-            .attr('font-weight', 500) // Semi-bold
-            .attr('pointer-events', 'none') // Don't capture mouse events
-            .text(d => d.name)
-            .attr('filter', 'drop-shadow(0px 1px 1px rgba(0,0,0,0.3))') // Text shadow
+            .attr("font-weight", 500)
+            .attr("pointer-events", "none")
+            .attr("filter", "drop-shadow(0px 1px 1px rgba(0,0,0,0.3))")
+            .text(d => d.name);
     }
 
-    return {drawRuler, drawCanvas,};
+    return { drawRuler, drawCanvas };
 }();
 
 export default ganttHelpers;
