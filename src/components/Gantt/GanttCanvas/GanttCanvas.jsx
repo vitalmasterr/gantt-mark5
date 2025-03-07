@@ -1,41 +1,35 @@
+// src\components\Gantt\GanttCanvas\GanttCanvas.jsx
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
 import { drawHelper } from "../ganttHelpers.js";
 import * as d3 from "d3";
 
 /**
- * Rounds (snaps) a Date to the nearest increment in local time.
- *
- * For day-level snapping, pass incrementMs = 24 * 60 * 60 * 1000.
- *
- * Example for 8-hour snapping:
- *   roundDateLocal(date, 8 * 60 * 60 * 1000)
+ * Rounds (snaps) a Date to the nearest increment in local time,
+ * but only if snapping is enabled.
  */
-function roundDateLocal(date, incrementMs) {
-    // Start-of-day in local time
-    const localMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    // ms from local midnight to the original date
-    const offsetFromMidnight = date.getTime() - localMidnight.getTime();
+function maybeSnap(date) {
+    const { snapEnabled, snapIncrement } = useGanttStore.getState();
+    if (!snapEnabled) {
+        // If snap is disabled, just return the date as-is
+        return date;
+    }
 
+    // Otherwise, do the actual rounding:
+    const incrementMs = snapIncrement;
+    const localMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const offsetFromMidnight = date.getTime() - localMidnight.getTime();
     const remainder = offsetFromMidnight % incrementMs;
     const half = incrementMs / 2;
 
-    // Snap offset up or down
     let snappedOffset;
     if (remainder >= half) {
         snappedOffset = offsetFromMidnight + (incrementMs - remainder);
     } else {
         snappedOffset = offsetFromMidnight - remainder;
     }
-
     return new Date(localMidnight.getTime() + snappedOffset);
 }
-
-/**
- * For day-level snapping:
- *    24 * 60 * 60 * 1000
- */
-const SNAP_INCREMENT = 24 * 60 * 60 * 1000;
 
 function GanttCanvas() {
     const timeRanges = useGanttStore(state => state.timeRanges);
@@ -48,25 +42,20 @@ function GanttCanvas() {
     const svgRef = React.useRef(null);
 
     React.useEffect(() => {
-        // Guard for invalid date range
         if (!timeRanges?.start || !timeRanges?.end || timeRanges.start > timeRanges.end) {
             return;
         }
 
         const svg = d3.select(svgRef.current);
-        // Clear any existing drawing
-        svg.selectAll("*").remove();
+        svg.selectAll("*").remove();  // clear existing
 
         const height = defaults.rowHeight * tasks.length;
-        svg.attr("width", width);
-        svg.attr("height", height);
+        svg.attr("width", width).attr("height", height);
 
         // (1) Draw background grid + tasks
         drawHelper.drawCanvas(scale, svg, timeRanges, defaults, tasks, "2w");
 
-        // ============================
-        //  HELPER: finalize + commit
-        // ============================
+        // Helper to commit changes to store after a drag
         function commitChanges(d, barSelection) {
             const finalX = parseFloat(barSelection.attr("x"));
             const finalW = parseFloat(barSelection.attr("width"));
@@ -75,9 +64,9 @@ function GanttCanvas() {
             let newStart = scale.invert(finalX);
             let newEnd   = scale.invert(finalX + finalW);
 
-            // Snap to local day boundary (or local increments)
-            newStart = roundDateLocal(newStart, SNAP_INCREMENT);
-            newEnd   = roundDateLocal(newEnd,   SNAP_INCREMENT);
+            // Snap or not, depending on store:
+            newStart = maybeSnap(newStart);
+            newEnd   = maybeSnap(newEnd);
 
             // Build updated tasks
             const updatedTasks = tasks.map(t =>
@@ -86,43 +75,32 @@ function GanttCanvas() {
             setTasks(updatedTasks);
         }
 
-        // ============================
-        //    DRAG ENTIRE BAR
-        // ============================
+        // DRAG ENTIRE BAR
         const dragBar = d3.drag()
             .on("start", function(event, d) {
-                // highlight
                 d3.select(this).attr("stroke", "black");
                 d.__offsetX = event.x - parseFloat(d3.select(this).attr("x"));
             })
             .on("drag", function(event, d) {
-                // Real-time snapping
                 const bar = d3.select(this);
                 const rawX = event.x - d.__offsetX;
 
-                // Convert X → local date, snap, then back → X
                 let proposedDate = scale.invert(rawX);
-                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                proposedDate = maybeSnap(proposedDate);
                 const snappedX = scale(proposedDate);
 
-                // Move bar + text
                 bar.attr("x", snappedX);
                 d3.select(this.parentNode).select("text.task-label").attr("x", snappedX + 10);
             })
             .on("end", function(event, d) {
-                // remove highlight
                 d3.select(this).attr("stroke", null);
                 commitChanges(d, d3.select(this));
             });
 
-        // ============================
-        //    DRAG LEFT HANDLE
-        // ============================
+        // DRAG LEFT HANDLE
         const dragLeftHandle = d3.drag()
             .on("start", function(event, d) {
-                // highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
-                // store right side
                 d.__rightX = scale(d.end);
             })
             .on("drag", function(event, d) {
@@ -130,12 +108,10 @@ function GanttCanvas() {
                 const text = d3.select(this.parentNode).select("text.task-label");
 
                 let rawLeftX = event.x;
-                // snap
                 let proposedDate = scale.invert(rawLeftX);
-                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                proposedDate = maybeSnap(proposedDate);
                 const snappedX = scale(proposedDate);
 
-                // keep right side fixed
                 const w = d.__rightX - snappedX;
                 if (w < 0) return; // avoid negative widths
 
@@ -148,23 +124,18 @@ function GanttCanvas() {
                 commitChanges(d, bar);
             });
 
-        // ============================
-        //    DRAG RIGHT HANDLE
-        // ============================
+        // DRAG RIGHT HANDLE
         const dragRightHandle = d3.drag()
             .on("start", function(event, d) {
-                // highlight
                 d3.select(this.parentNode).select("rect.task-bar").attr("stroke", "black");
-                // store left side
                 d.__leftX = scale(d.start);
             })
             .on("drag", function(event, d) {
                 const bar = d3.select(this.parentNode).select("rect.task-bar");
-                let rawRightX = event.x;
 
-                // snap
+                let rawRightX = event.x;
                 let proposedDate = scale.invert(rawRightX);
-                proposedDate = roundDateLocal(proposedDate, SNAP_INCREMENT);
+                proposedDate = maybeSnap(proposedDate);
                 const snappedRightX = scale(proposedDate);
 
                 const newW = snappedRightX - d.__leftX;
@@ -178,13 +149,10 @@ function GanttCanvas() {
                 commitChanges(d, bar);
             });
 
-        // ============================
-        //   ATTACH DRAG TO ELEMENTS
-        // ============================
-        // 1) Entire bar drag
+        // Attach the drags
         svg.selectAll(".task-bar").call(dragBar);
 
-        // 2) Create invisible left/right handles
+        // Create invisible left/right handles
         const handleWidth = 8;
         svg.selectAll(".task-group").each(function(d) {
             const group = d3.select(this);
@@ -215,7 +183,7 @@ function GanttCanvas() {
                 .style("cursor", "ew-resize");
         });
 
-        // 3) Attach drag behavior to handles
+        // Attach handle drags
         svg.selectAll(".task-handle-left").call(dragLeftHandle);
         svg.selectAll(".task-handle-right").call(dragRightHandle);
 

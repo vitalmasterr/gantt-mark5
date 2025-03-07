@@ -1,3 +1,4 @@
+// src\components\Gantt\useGanttStore.js
 import {create} from "zustand";
 import ganttHelpers from "./ganttHelpers.js";
 import * as d3 from "d3";
@@ -14,6 +15,12 @@ const useGanttStore = create((set, get) => ({
         columnWidth: 100,
     },
     size: {width: 0, height: 0},
+
+    // 1) Add snapping configuration:
+    snapEnabled: true,
+    snapIncrement: 24 * 60 * 60 * 1000, // default: 1 day in ms
+    setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+    setSnapIncrement: (ms) => set({ snapIncrement: ms }),
 
     setTasks: (tasks) => {
         const timeRanges = ganttHelpers.countTasksTimeRange(tasks);
@@ -37,7 +44,7 @@ const useGanttStore = create((set, get) => ({
         // The total pixel width if each day is a column
         const width = defaults.columnWidth * days;
 
-        // Here’s the key change: use d3.scaleTime instead of scaleLinear
+        // Use d3.scaleTime
         const domain = [timeRanges.start, timeRanges.end];
         const range = [0, width];
         const scale = d3.scaleTime().domain(domain).range(range);
