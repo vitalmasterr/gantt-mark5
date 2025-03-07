@@ -14,12 +14,11 @@
       background-color: whitesmoke;
       box-sizing: border-box;
       font-family: Roboto;
-      
+
       th {
-        padding: 0 30px;
+        padding: 0 30px 0 0;
         border-right: 1px solid whitesmoke;
         color: #8d8e8f;
-        
       }
     }
 
@@ -33,7 +32,35 @@
 
       td {
         padding: 0 30px;
+
+        &.gantt-table-tasktd {
+          padding: 0 30px 0 0;
+        }
       }
+    }
+  }
+
+  &-task {
+    display: flex;
+    flex-direction: row;
+    width: max-content;
+    align-items: center;
+    max-width: 350px;
+
+    &-expand {
+      display: inline-block; // Ensures width is applied
+      width: 1em; // Fixed width so both + and - align
+      text-align: center; // Centers the symbol within that width
+      font-family: monospace; // Makes + and - more uniform
+      font-weight: bold;
+      font-size: 22px;
+    }
+
+    &-name {
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
   }
 }

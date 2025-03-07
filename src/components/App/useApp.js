@@ -6,22 +6,9 @@ import useGanttStore from "../Gantt/useGanttStore.js";
  * (ignoring time zones in the string).
  */
 function parseLocalDate(ymd) {
-    // e.g. "2021-06-01" => local midnight on June 1, 2021
     const [year, month, day] = ymd.split("-");
     return new Date(+year, +month - 1, +day);
 }
-
-/**
- * If you have full ISO strings with "T" and "Z" (like "2021-06-01T00:00:00Z"),
- * but want to treat them as local midnight,
- * you can do something similar: just ignore the time/zone part:
- *
- *   function parseLocalIso(iso) {
- *     // e.g. "2021-06-01T00:00:00Z" => "2021-06-01"
- *     const [datePart] = iso.split("T"); // "2021-06-01"
- *     return parseLocalDate(datePart);
- *   }
- */
 
 function useApp() {
     const setTasks = useGanttStore(state => state.setTasks);
@@ -31,35 +18,56 @@ function useApp() {
         if (!firstRender.current) return;
         firstRender.current = false;
 
+        // Example hierarchy using parentId:
+        //    1
+        //    ├─ 2
+        //    └─ 3
+        //    4
+        //    └─ 5
+        //       └─ 6
         setTimeout(() => {
-            // Instead of new Date("2021-06-01"), we parse *locally*:
             setTasks([
                 {
                     id: 1,
-                    name: "Task 1",
+                    name: "Parent Task 1",
                     start: parseLocalDate("2021-06-01"),
                     end: parseLocalDate("2021-06-10"),
-                    dependencies: [{id: 2, type: "FS"},{id: 4, type: "FS"}],
+                    dependencies: [{id: 2, type: "FS"}, {id: 2, type: "FS"}],
                 },
                 {
                     id: 2,
-                    name: "Task 2",
-                    start: parseLocalDate("2021-06-05"),
-                    end: parseLocalDate("2021-06-15"),
-                    dependencies: [{id: 3, type: "FS"}],
+                    parentId: 1,
+                    name: "Child Task 2",
+                    start: parseLocalDate("2021-06-02"),
+                    end: parseLocalDate("2021-06-05"),
+                    dependencies: [{id: 5, type: "FS"}],
                 },
                 {
                     id: 3,
-                    name: "Task 3",
-                    start: parseLocalDate("2021-06-10"),
-                    end: parseLocalDate("2021-06-20"),
-                    dependencies: [{id: 4, type: "SS", lag: 5}],
+                    parentId: 1,
+                    name: "Child Task 3",
+                    start: parseLocalDate("2021-06-06"),
+                    end: parseLocalDate("2021-06-09"),
                 },
                 {
                     id: 4,
-                    name: "Task 4",
+                    name: "Parent Task 4",
                     start: parseLocalDate("2021-06-15"),
                     end: parseLocalDate("2021-06-25"),
+                },
+                {
+                    id: 5,
+                    parentId: 4,
+                    name: "Child Task 5",
+                    start: parseLocalDate("2021-06-15"),
+                    end: parseLocalDate("2021-06-18"),
+                },
+                {
+                    id: 6,
+                    parentId: 5,
+                    name: "Grandchild Task 6",
+                    start: parseLocalDate("2021-06-19"),
+                    end: parseLocalDate("2021-06-22"),
                 },
             ]);
         }, 450);
