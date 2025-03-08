@@ -57,6 +57,36 @@ function computeTimeRange(tasks) {
     return {start, end};
 }
 
+/**
+ * Helper to clamp a date within [min, max].
+ */
+function clampDate(date, min, max) {
+    if (date < min) return new Date(min);
+    if (date > max) return new Date(max);
+    return date;
+}
+
+/**
+ * Return a "window start" that includes "today" if it's inside [rangeStart, rangeEnd].
+ * Otherwise just return the tasks rangeStart.
+ */
+function getInitialVisibleStart(rangeStart, rangeEnd) {
+    const today = new Date();
+    if (today >= rangeStart && today <= rangeEnd) {
+        return new Date(today);
+    }
+    return new Date(rangeStart);
+}
+
+/**
+ * Add 'days' to a date (positive or negative).
+ */
+function addDays(date, days) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
 const useGanttStore = create((set, get) => ({
     // Raw tasks from setTasks()
     rawTasks: [],
@@ -67,14 +97,25 @@ const useGanttStore = create((set, get) => ({
     // For collapsing: { [taskId]: true/false }
     collapsed: {},
 
-    // Current time range for visible tasks
+    // Current time range for all tasks (full min->max)
     timeRanges: {start: null, end: null},
+
+    // The scale for the *visible domain*
     scale: null,
+
+    // The total width if we used the entire tasks range
     width: 0,
+
+    // The total days in the entire tasks range
     days: 0,
+
+    // The actual domain used for drawing (may be entire or just a slice)
     domain: null,
+
+    // Container size
     size: {width: 0, height: 0},
 
+    // Some defaults
     defaults: {
         rowHeight: 50,
         rulerHeight: 50,
@@ -87,38 +128,106 @@ const useGanttStore = create((set, get) => ({
     setSnapEnabled: (enabled) => set({snapEnabled: enabled}),
     setSnapIncrement: (ms) => set({snapIncrement: ms}),
 
-    // NEW: enforceConstraints toggle
+    // Constraints toggle
     enforceConstraints: false,
     setEnforceConstraints: (flag) => set({enforceConstraints: flag}),
 
-    /**
-     * Rebuild entire store state after tasks or collapsed states change.
-     */
+    // --- NEW PAGINATION ----
+    pageMode: false,         // whether pagination is on/off
+    timeSpanDays: 7,         // 7=1w, 14=2w, 30=1m
+    visibleStart: null,      // left boundary of the visible window
+    visibleEnd: null,        // right boundary of the visible window
+
+    setPageMode: (on) => {
+        set({pageMode: on});
+        get().rebuildAll();
+    },
+
+    setTimeSpanDays: (days) => {
+        set({timeSpanDays: days});
+        if (get().pageMode) {
+            const state = get();
+            if (state.visibleStart && state.timeRanges.start) {
+                // shift visibleEnd to be visibleStart + timeSpanDays
+                const newEnd = addDays(state.visibleStart, days);
+                set({visibleEnd: clampDate(newEnd, state.timeRanges.start, state.timeRanges.end)});
+            }
+            state.rebuildAll();
+        }
+    },
+
+    // Called once tasks are loaded or changed, it rebuilds everything
     rebuildAll: (newRawTasks) => {
         const state = get();
-        const collapsedMap = state.collapsed;
-        // If we got a new array, store it:
+
+        // If we got a new tasks array, store it
         if (Array.isArray(newRawTasks)) {
             state.rawTasks = newRawTasks;
         }
-        // Rebuild tree
+
+        // Build tree
         const tree = buildTree(state.rawTasks);
-        // Rebuild visible
-        const visible = buildVisibleTasks(tree, collapsedMap);
-        // Compute time range
+
+        // Build visible tasks
+        const visible = buildVisibleTasks(tree, state.collapsed);
+
+        // Compute overall time range (min->max of all tasks)
         const rng = computeTimeRange(visible);
-        // Compute scale
-        const defaults = state.defaults;
-        const day = 24 * 60 * 60 * 1000;
-        const start = rng.start, end = rng.end;
-        let scale = null, totalDays = 0, domain = null, width = 0;
+
+        // Also store that in state
+        state.timeRanges = rng;
+
+        // Calculate the total (entire) number of days
+        const dayMs = 24 * 60 * 60 * 1000;
+        let totalDays = 0;
+        let start = rng.start, end = rng.end;
         if (start && end && start < end) {
-            totalDays = Math.ceil((end - start) / day);
-            width = defaults.columnWidth * totalDays;
-            domain = [start, end];
+            totalDays = Math.ceil((end - start) / dayMs);
+        }
+
+        // By default, domain is the entire range
+        let finalStart = start;
+        let finalEnd = end;
+
+        // If page mode is on, use visibleStart/visibleEnd
+        if (state.pageMode && start && end) {
+            // If not set yet, init the visible window so it includes "today" if possible
+            if (!state.visibleStart || !state.visibleEnd) {
+                const vs = getInitialVisibleStart(start, end);
+                const ve = addDays(vs, state.timeSpanDays);
+                set({
+                    visibleStart: clampDate(vs, start, end),
+                    visibleEnd: clampDate(ve, start, end),
+                });
+            }
+
+            // Now recalc with the store’s current visibleStart/visibleEnd
+            const vs2 = clampDate(state.visibleStart, start, end);
+            const ve2 = clampDate(state.visibleEnd, start, end);
+
+            if (vs2 >= ve2) {
+                // Force at least 1 day
+                set({
+                    visibleEnd: addDays(vs2, 1),
+                });
+            }
+
+            finalStart = get().visibleStart;
+            finalEnd = get().visibleEnd;
+        }
+
+        // Now compute the "width" for that final domain
+        let scale = null;
+        let domain = null;
+        let width = 0;
+        if (finalStart && finalEnd && finalStart < finalEnd) {
+            const numDays = Math.ceil((finalEnd - finalStart) / dayMs);
+            width = state.defaults.columnWidth * numDays;
+            domain = [finalStart, finalEnd];
             scale = d3.scaleTime().domain(domain).range([0, width]);
         }
 
+        // Update store
         set({
             treeTasks: tree,
             visibleTasks: visible,
@@ -126,13 +235,10 @@ const useGanttStore = create((set, get) => ({
             scale,
             width,
             days: totalDays,
-            domain
+            domain,
         });
     },
 
-    /**
-     * Set tasks from outside
-     */
     setTasks: (tasks) => {
         set(() => {
             return {rawTasks: tasks};
@@ -140,28 +246,50 @@ const useGanttStore = create((set, get) => ({
         get().rebuildAll(tasks);
     },
 
-    /**
-     * Toggle collapsed state of a task
-     */
     toggleCollapse: (taskId) => {
-        const state = get();
-        const was = !!state.collapsed[taskId];
-        const newCollapsed = {...state.collapsed, [taskId]: !was};
+        const was = !!get().collapsed[taskId];
+        const newCollapsed = {...get().collapsed, [taskId]: !was};
         set({collapsed: newCollapsed});
-        // Rebuild everything with new collapsed states:
         get().rebuildAll();
     },
 
-    /**
-     * Set the size of the container
-     */
     setSize: (size) => {
         const current = get().size;
         if (current?.width === size?.width && current?.height === size?.height) return;
         set({size});
     },
 
+    // ----- SHIFT VISIBLE WINDOW: move by timeSpanDays each time -----
+    goPrevPage: () => {
+        const state = get();
+        if (!state.pageMode || !state.visibleStart) return;
+        const {start} = state.timeRanges;
+        let newStart = addDays(state.visibleStart, -state.timeSpanDays);
+        newStart = clampDate(newStart, start, state.timeRanges.end);
+
+        const newEnd = addDays(newStart, state.timeSpanDays);
+        set({
+            visibleStart: newStart,
+            visibleEnd: clampDate(newEnd, start, state.timeRanges.end)
+        });
+        state.rebuildAll();
+    },
+
+    goNextPage: () => {
+        const state = get();
+        if (!state.pageMode || !state.visibleStart) return;
+        const {end} = state.timeRanges;
+        let newStart = addDays(state.visibleStart, state.timeSpanDays);
+        newStart = clampDate(newStart, state.timeRanges.start, end);
+
+        const newEnd = addDays(newStart, state.timeSpanDays);
+        set({
+            visibleStart: newStart,
+            visibleEnd: clampDate(newEnd, state.timeRanges.start, end)
+        });
+        state.rebuildAll();
+    },
+
 }));
 
 export default useGanttStore;
-

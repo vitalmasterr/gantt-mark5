@@ -1,26 +1,52 @@
-// src/components/Gantt/drawingLogic.js
-
-/**
- * This module handles all the rendering logic using D3 and the DOM.
- * It knows nothing about BFS or constraint logic—just how to draw tasks/dependencies/rulers/grids.
- */
+// src\components\Gantt\logic\drawingLogic.js
 
 import * as d3 from "d3";
 import ganttHelpers from "./ganttHelpers.js";
 
-/**
- * Draw tasks (bars) + dependencies in one go.
- */
+// ---- BFS & Constraint logic ----
+import {
+    buildDownstreamMap,
+    buildUpstreamMap,
+    collectDownstream,
+    collectUpstream,
+    doTwoWayBFS
+} from "./BFS.js";
+
+import {
+    clampTaskToConstraints,
+    maybeSnap,
+    mergeEphemeral
+} from "./constraints.js";
+
+// -------------------------------------------------------------------
+// 1) Draw tasks + dependencies
+// -------------------------------------------------------------------
+
 export function renderTasksAndDependencies(svg, scale, tasks, cfg) {
     drawTasks(svg, scale, tasks, cfg);
     drawDependencies(svg, tasks, scale, tasks, cfg);
 }
 
 /**
- * Draw the task bars and any text or handles within them.
+ * Clamp a date's ms within [minMs, maxMs].
+ */
+function clampMs(ms, minMs, maxMs) {
+    if (ms < minMs) return minMs;
+    if (ms > maxMs) return maxMs;
+    return ms;
+}
+
+/**
+ * Draw the task bars and any text or handles within them, **clipping** bars if
+ * they fall partly outside the domain. If clipped, show an arrow shape at the edge.
  */
 export function drawTasks(svg, scale, tasks, cfg) {
     svg.selectAll(".task-group").remove();
+
+    const domain = scale.domain();
+    const domainMin = domain[0].getTime();
+    const domainMax = domain[1].getTime();
+
     const gap = 0.2 * cfg.rowHeight;
 
     const gTask = svg.selectAll(".task-group")
@@ -28,41 +54,88 @@ export function drawTasks(svg, scale, tasks, cfg) {
         .join("g")
         .attr("class","task-group");
 
-    gTask.append("rect")
-        .attr("class","task-bar")
-        .attr("x", d => scale(d.start))
-        .attr("y",(d,i) => i * cfg.rowHeight + gap)
-        .attr("width", d => scale(d.end) - scale(d.start))
-        .attr("height", cfg.rowHeight - gap*2)
-        .attr("rx",2)
-        .attr("fill","#3497d9")
-        .attr("stroke", "#256999")
-        .attr("stroke-width",1)
-        .style("filter","drop-shadow(0px 1px 2px rgba(0,0,0,0.2))");
+    gTask.each(function(d, i) {
+        const group = d3.select(this);
 
-    gTask.append("text")
-        .attr("class", d => `task-label task-label-${d.id}`)
-        .attr("x", d => scale(d.start) + 10)
-        .attr("y",(d,i) => i * cfg.rowHeight + (cfg.rowHeight / 2) + 5)
-        .attr("fill","white")
-        .attr("font-size","15px")
-        .attr("font-family","Roboto")
-        .attr("font-weight",500)
-        .attr("pointer-events","none")
-        .attr("filter","drop-shadow(0px 1px 1px rgba(0,0,0,0.3))")
-        .text(d => d.name);
+        // Original times
+        const startMs = d.start.getTime();
+        const endMs   = d.end.getTime();
 
-    // Invisible handles for resizing
-    const handleW = 8;
-    gTask.each(function(d) {
-        const bar = d3.select(this).select("rect.task-bar");
-        const x = +bar.attr("x");
-        const w = +bar.attr("width");
-        const y = +bar.attr("y");
-        const h = +bar.attr("height");
+        // If completely out of the visible domain, skip drawing
+        if (endMs < domainMin || startMs > domainMax) {
+            return;
+        }
 
-        d3.select(this)
-            .append("rect")
+        // Calculate clamped boundaries
+        const barStartMs = clampMs(startMs, domainMin, domainMax);
+        const barEndMs   = clampMs(endMs, domainMin, domainMax);
+
+        // Convert to X coords
+        const x = scale(barStartMs);
+        const w = scale(barEndMs) - x;
+        const y = i * cfg.rowHeight + gap;
+        const h = cfg.rowHeight - gap*2;
+
+        // Draw the main bar (only the visible portion)
+        group.append("rect")
+            .attr("class","task-bar")
+            .attr("x", x)
+            .attr("y", y)
+            .attr("width", w)
+            .attr("height", h)
+            .attr("rx",2)
+            .attr("fill","#3497d9")
+            .attr("stroke", "#256999")
+            .attr("stroke-width",1)
+            .style("filter","drop-shadow(0px 1px 2px rgba(0,0,0,0.2))");
+
+        // Draw label if there's enough room
+        const labelX = x + 10;
+        const labelY = i * cfg.rowHeight + (cfg.rowHeight / 2) + 5;
+        const minWidthForText = 30;
+        if (w > minWidthForText) {
+            group.append("text")
+                .attr("class", `task-label task-label-${d.id}`)
+                .attr("x", labelX)
+                .attr("y", labelY)
+                .attr("fill","white")
+                .attr("font-size","15px")
+                .attr("font-family","Roboto")
+                .attr("font-weight",500)
+                .attr("pointer-events","none")
+                .attr("filter","drop-shadow(0px 1px 1px rgba(0,0,0,0.3))")
+                .text(d.name);
+        }
+
+        // If truncated on the left side
+        if (startMs < domainMin) {
+            const yMid = y + h/2;
+            // triangle pointing left
+            group.append("path")
+                .attr("class", "truncated-arrow-left")
+                .attr("d", `M${x},${yMid} 
+                            L${x-6},${yMid-6} 
+                            L${x-6},${yMid+6} Z`)
+                .attr("fill", "#cc0000");
+        }
+
+        // If truncated on the right side
+        if (endMs > domainMax) {
+            const barRightX = x + w;
+            const yMid = y + h/2;
+            // triangle pointing right
+            group.append("path")
+                .attr("class", "truncated-arrow-right")
+                .attr("d", `M${barRightX},${yMid}
+                            L${barRightX+6},${yMid-6}
+                            L${barRightX+6},${yMid+6} Z`)
+                .attr("fill", "#cc0000");
+        }
+
+        // Invisible handles for resizing
+        const handleW = 8;
+        // left handle
+        group.append("rect")
             .attr("class","task-handle-left")
             .attr("x", x - handleW/2)
             .attr("y", y)
@@ -70,9 +143,8 @@ export function drawTasks(svg, scale, tasks, cfg) {
             .attr("height", h)
             .attr("fill","transparent")
             .style("cursor","ew-resize");
-
-        d3.select(this)
-            .append("rect")
+        // right handle
+        group.append("rect")
             .attr("class","task-handle-right")
             .attr("x", x + w - handleW/2)
             .attr("y", y)
@@ -84,7 +156,7 @@ export function drawTasks(svg, scale, tasks, cfg) {
 }
 
 /**
- * Draw dependencies (arrows) between tasks based on their relationships.
+ * Draw dependencies (arrows) between tasks. (We’re still not clipping lines, but you can.)
  */
 export function drawDependencies(svg, tasks, scale, allTasks, cfg) {
     svg.selectAll(".dependency-layer").remove();
@@ -106,7 +178,6 @@ export function drawDependencies(svg, tasks, scale, allTasks, cfg) {
     const tasksById = new Map(allTasks.map(t => [t.id, t]));
     const offset = 20;
 
-    // Cubic-like path with horizontal "handles".
     function pathData(px, py, cx, cy) {
         const inPx = px + offset;
         const inCx = cx - offset;
@@ -137,14 +208,16 @@ export function drawDependencies(svg, tasks, scale, allTasks, cfg) {
     });
 }
 
-/**
- * Draw grid lines for the Gantt chart.
- */
-export function drawGrid(scale, svg, range, cfg, tasks, mode="2w") {
+// -------------------------------------------------------------------
+// 2) Draw the "grid" lines behind tasks
+// -------------------------------------------------------------------
+
+export function drawGrid(scale, svg, range, cfg, tasks, mode="day") {
     svg.selectAll("*").remove();
     const marks = getTimeMarks(range, mode);
     const w = cfg.columnWidth * marks.length;
     const h = cfg.rowHeight * tasks.length;
+
     svg.attr("width", w).attr("height", h);
 
     const grid = svg.selectAll(".canvas-grid")
@@ -152,6 +225,7 @@ export function drawGrid(scale, svg, range, cfg, tasks, mode="2w") {
         .join("g")
         .attr("class","canvas-grid");
 
+    // vertical lines
     grid.append("line")
         .attr("x1", d => scale(d))
         .attr("y1", 0)
@@ -160,19 +234,24 @@ export function drawGrid(scale, svg, range, cfg, tasks, mode="2w") {
         .attr("stroke","#ccc")
         .attr("stroke-width",1);
 
-    grid.append("line")
-        .attr("x1", 0)
-        .attr("y1",(d,i) => i * cfg.rowHeight)
-        .attr("x2", w)
-        .attr("y2",(d,i) => i * cfg.rowHeight)
-        .attr("stroke","#ccc")
-        .attr("stroke-width",1);
+    // horizontal lines (for each row)
+    // We do tasks.length+1 lines, but for simplicity:
+    for (let i = 0; i <= tasks.length; i++) {
+        svg.append("line")
+            .attr("x1", 0)
+            .attr("y1", i * cfg.rowHeight)
+            .attr("x2", w)
+            .attr("y2", i * cfg.rowHeight)
+            .attr("stroke","#ccc")
+            .attr("stroke-width",1);
+    }
 }
 
-/**
- * Draw the top "ruler" that labels time increments (e.g., days).
- */
-export function drawRuler(scale, svg, range, cfg, mode="2w") {
+// -------------------------------------------------------------------
+// 3) Draw the "ruler" (time axis) across the top
+// -------------------------------------------------------------------
+
+export function drawRuler(scale, svg, range, cfg, mode="day") {
     svg.selectAll("*").remove();
     if (!scale || !svg || !range?.start || !range?.end) return;
 
@@ -184,6 +263,7 @@ export function drawRuler(scale, svg, range, cfg, mode="2w") {
         .join("g")
         .attr("class","large-mark");
 
+    // optional line at each mark
     groups.append("line")
         .attr("class","ruler-line large-mark-line")
         .attr("x1", d => scale(d))
@@ -193,30 +273,241 @@ export function drawRuler(scale, svg, range, cfg, mode="2w") {
         .attr("stroke","black")
         .attr("stroke-width",1);
 
+    // big text labels
     groups.append("text")
         .attr("class","ruler-text large-mark-text")
         .attr("x", d => scale(d) + halfCol)
         .attr("y", cfg.rulerHeight * 0.5)
         .attr("dominant-baseline","middle")
         .attr("text-anchor","middle")
-        .attr("font-size","18px")
+        .attr("font-size","14px")
         .attr("font-family","Roboto")
         .text(d => ganttHelpers.timeHelper.formatDate(d, "d ddd").toUpperCase());
 }
 
-/**
- * Return a list of Date marks between `range.start` and `range.end`.
- */
-export function getTimeMarks({ start, end }, mode="2w") {
+// -------------------------------------------------------------------
+// 4) Utility for "day" increments
+// -------------------------------------------------------------------
+
+export function getTimeMarks({ start, end }, mode="day") {
     const s = ganttHelpers.timeHelper.getStartOfDay(start);
     const e = ganttHelpers.timeHelper.getEndOfDay(end);
-    const incFn = ganttHelpers.timeHelper.incrementMap[mode];
-    if (!s || !e || s > e || typeof incFn !== "function") return [];
-    const result = [];
+    if (!s || !e || s > e) return [];
+
+    // We'll do day increments no matter 7/14/30 days
+    const marks = [];
     const cur = new Date(s);
     while (cur <= e) {
-        result.push(new Date(cur));
-        incFn(cur);
+        marks.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1); // increment 1 day
     }
-    return result;
+    return marks;
+}
+
+// -------------------------------------------------------------------
+// 5) Setup Dragging
+// -------------------------------------------------------------------
+
+/**
+ * We'll keep the BFS + constraint logic here and just call it after drawing tasks.
+ */
+export function setupDragging({
+                                  svg,
+                                  scale,
+                                  tasks,
+                                  defaults,
+                                  snapEnabled,
+                                  snapIncrement,
+                                  setTasks,
+                                  enforceConstraints
+                              }) {
+    const downstreamMap = buildDownstreamMap(tasks);
+    const upstreamMap   = buildUpstreamMap(tasks);
+    const byId = new Map(tasks.map(t => [t.id, t]));
+
+    function commitChanges(ephemeralMap) {
+        setTasks(mergeEphemeral(tasks, ephemeralMap));
+    }
+
+    function getLocalMouseX(event) {
+        const [mx] = d3.pointer(event, svg.node());
+        return mx;
+    }
+
+    const MIN_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+    // ---------- DRAG ENTIRE BAR -----------
+    const dragBar = d3.drag()
+        .on("start", function (event, d) {
+            d3.select(this).attr("stroke", "black");
+
+            d.__ephemeralMap = buildEphemeralMap(d, tasks, downstreamMap, upstreamMap, byId);
+
+            // pinned domain offset
+            const me = d.__ephemeralMap.get(d.id);
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            d.__grabOffset = domainX - me.start.getTime();
+        })
+        .on("drag", function (event, d) {
+            const ephemeralMap = d.__ephemeralMap;
+            const me = ephemeralMap.get(d.id);
+            if (!me) return;
+
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            const desired = domainX - d.__grabOffset;
+            const newStart = maybeSnap(new Date(desired), snapEnabled, snapIncrement);
+
+            // shift entire bar
+            const shiftMs = newStart.getTime() - me.start.getTime();
+            me.start = new Date(me.start.getTime() + shiftMs);
+            me.end   = new Date(me.end.getTime() + shiftMs);
+
+            // Constraints
+            if (enforceConstraints) {
+                clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "move");
+            } else {
+                doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
+            }
+
+            // Min 4 hours
+            const dur = me.end - me.start;
+            if (dur < MIN_MS) {
+                const diff = MIN_MS - dur;
+                me.end = new Date(me.end.getTime() + diff);
+            }
+
+            // Re-draw ephemeral
+            const merged = mergeEphemeral(tasks, ephemeralMap);
+            renderTasksAndDependencies(svg, scale, merged, defaults);
+            svg.selectAll(".task-bar").filter(x => x.id === d.id).attr("stroke", "black");
+        })
+        .on("end", function (event, d) {
+            d3.select(this).attr("stroke", null);
+            commitChanges(d.__ephemeralMap);
+        });
+
+    // ---------- LEFT HANDLE -----------
+    const dragLeft = d3.drag()
+        .on("start", function (event, d) {
+            d3.select(this.parentNode).select(".task-bar").attr("stroke", "black");
+            d.__ephemeralMap = buildEphemeralMap(d, tasks, downstreamMap, upstreamMap, byId);
+
+            const me = d.__ephemeralMap.get(d.id);
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            d.__grabOffset = domainX - me.start.getTime();
+        })
+        .on("drag", function (event, d) {
+            const ephemeralMap = d.__ephemeralMap;
+            const me = ephemeralMap.get(d.id);
+            if (!me) return;
+
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            const desired = domainX - d.__grabOffset;
+            const newStart = maybeSnap(new Date(desired), snapEnabled, snapIncrement);
+
+            // keep newStart <= me.end
+            if (newStart > me.end) return;
+            me.start = newStart;
+
+            // Constraints
+            if (enforceConstraints) {
+                clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "left");
+            } else {
+                doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
+            }
+
+            // Min 4 hours
+            const dur = me.end - me.start;
+            if (dur < MIN_MS) {
+                me.start = new Date(me.end.getTime() - MIN_MS);
+            }
+
+            // Re-draw ephemeral
+            const merged = mergeEphemeral(tasks, ephemeralMap);
+            renderTasksAndDependencies(svg, scale, merged, defaults);
+            svg.selectAll(".task-bar").filter(x => x.id === d.id).attr("stroke", "black");
+        })
+        .on("end", function (event, d) {
+            d3.select(this.parentNode).select(".task-bar").attr("stroke", null);
+            commitChanges(d.__ephemeralMap);
+        });
+
+    // ---------- RIGHT HANDLE -----------
+    const dragRight = d3.drag()
+        .on("start", function (event, d) {
+            d3.select(this.parentNode).select(".task-bar").attr("stroke", "black");
+            d.__ephemeralMap = buildEphemeralMap(d, tasks, downstreamMap, upstreamMap, byId);
+
+            const me = d.__ephemeralMap.get(d.id);
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            d.__grabOffset = domainX - me.end.getTime();
+        })
+        .on("drag", function (event, d) {
+            const ephemeralMap = d.__ephemeralMap;
+            const me = ephemeralMap.get(d.id);
+            if (!me) return;
+
+            const localX = getLocalMouseX(event);
+            const domainX = scale.invert(localX).getTime();
+            const desired = domainX - d.__grabOffset;
+            const newEnd = maybeSnap(new Date(desired), snapEnabled, snapIncrement);
+
+            // keep newEnd >= me.start
+            if (newEnd < me.start) return;
+            me.end = newEnd;
+
+            // Constraints
+            if (enforceConstraints) {
+                clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "right");
+            } else {
+                doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
+            }
+
+            // Min 4 hours
+            const dur = me.end - me.start;
+            if (dur < MIN_MS) {
+                me.end = new Date(me.start.getTime() + MIN_MS);
+            }
+
+            // Re-draw ephemeral
+            const merged = mergeEphemeral(tasks, ephemeralMap);
+            renderTasksAndDependencies(svg, scale, merged, defaults);
+            svg.selectAll(".task-bar").filter(x => x.id === d.id).attr("stroke", "black");
+        })
+        .on("end", function (event, d) {
+            d3.select(this.parentNode).select(".task-bar").attr("stroke", null);
+            commitChanges(d.__ephemeralMap);
+        });
+
+    // Attach the drags
+    svg.selectAll(".task-bar").call(dragBar);
+    svg.selectAll(".task-handle-left").call(dragLeft);
+    svg.selectAll(".task-handle-right").call(dragRight);
+}
+
+/**
+ * Build ephemeral copies for BFS constraints.
+ */
+function buildEphemeralMap(d, tasks, downstreamMap, upstreamMap, byId) {
+    const ds = collectDownstream(d.id, downstreamMap);
+    const us = collectUpstream(d.id, upstreamMap);
+    const all = new Set([...ds, ...us, d.id]);
+
+    const ephemeralMap = new Map();
+    for (const tid of all) {
+        const orig = byId.get(tid);
+        if (!orig) continue;
+        ephemeralMap.set(tid, {
+            ...orig,
+            start: new Date(orig.start),
+            end: new Date(orig.end),
+            dependencies: orig.dependencies
+        });
+    }
+    return ephemeralMap;
 }

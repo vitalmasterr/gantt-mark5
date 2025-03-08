@@ -6,25 +6,25 @@ import drawHelper from "../logic/drawHelper.js";
 
 function GanttCanvas() {
     // Pull everything from the store
-    const tasks = useGanttStore(state => state.visibleTasks);
-    const timeRanges = useGanttStore(state => state.timeRanges);
-    const defaults = useGanttStore(state => state.defaults);
-    const scale = useGanttStore(state => state.scale);
-    const width = useGanttStore(state => state.width);
+    const tasks       = useGanttStore(state => state.visibleTasks);
+    const defaults    = useGanttStore(state => state.defaults);
+    const scale       = useGanttStore(state => state.scale);
+    const width       = useGanttStore(state => state.width);
     const snapEnabled = useGanttStore(state => state.snapEnabled);
     const snapIncrement = useGanttStore(state => state.snapIncrement);
-    const setTasks = useGanttStore(state => state.setTasks);
+    const setTasks    = useGanttStore(state => state.setTasks);
 
-    // NEW: read enforceConstraints from the store
+    // Pagination domain (either entire range or the clipped/paged domain)
+    const domainArray = useGanttStore(state => state.domain); // [start, end]
     const enforceConstraints = useGanttStore(state => state.enforceConstraints);
 
     const svgRef = React.useRef(null);
 
     React.useEffect(() => {
-        // If we have no valid time range, do nothing
-        if (!timeRanges?.start || !timeRanges?.end || timeRanges.start >= timeRanges.end) {
-            return;
-        }
+        // If we have no valid domain, do nothing
+        if (!domainArray || domainArray.length < 2) return;
+        const [start, end] = domainArray;
+        if (!start || !end || start >= end) return;
 
         // Select or create the <svg> using d3
         const svg = d3.select(svgRef.current);
@@ -32,23 +32,33 @@ function GanttCanvas() {
         // Clear the SVG each render, so we can attach new drag handlers
         svg.selectAll("*").remove();
 
-        // Draw everything
-        drawHelper.drawEverything({
-            svg,
+        // Draw the grid for just our domain
+        drawHelper.drawGrid(
             scale,
-            timeRanges,
+            svg,
+            { start, end },   // pass only the current domain as the "range"
             defaults,
             tasks,
-            width,
+            "day"             // we’ll label days
+        );
+
+        // Then draw tasks + dependencies
+        drawHelper.renderTasksAndDependencies(svg, scale, tasks, defaults);
+
+        // Finally set up dragging
+        drawHelper.setupDragging({
+            svg,
+            scale,
+            tasks,
+            defaults,
             snapEnabled,
             snapIncrement,
             setTasks,
-            // Pass enforceConstraints into drawEverything:
             enforceConstraints,
         });
 
     }, [
-        timeRanges,
+        domainArray,
         tasks,
         scale,
         width,
@@ -56,13 +66,13 @@ function GanttCanvas() {
         snapEnabled,
         snapIncrement,
         setTasks,
-        // IMPORTANT: add enforceConstraints to dependencies
         enforceConstraints
     ]);
 
     return (
         <div className="gantt-canvas">
-            <svg ref={svgRef}/>
+            {/* The width is set by the chart logic to match the domain range */}
+            <svg ref={svgRef} />
         </div>
     );
 }

@@ -1,34 +1,42 @@
+// src\components\Gantt\GanttRuler\GanttRuler.jsx
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
 import * as d3 from "d3";
 import drawHelper from "../logic/drawHelper.js";
 
-
 function GanttRuler() {
-    const timeRanges = useGanttStore(state => state.timeRanges);
-    const width = useGanttStore(state => state.width);
-    const defaults = useGanttStore(state => state.defaults);
-    const scale = useGanttStore(state => state.scale);
+    const defaults    = useGanttStore(state => state.defaults);
+    const scale       = useGanttStore(state => state.scale);
+    const domainArray = useGanttStore(state => state.domain); // [start, end]
     const svgRef = React.useRef(null);
 
     React.useEffect(() => {
-        const {start, end} = timeRanges || {};
-        if (!start || !end || start >= end) {
-            return;
-        }
+        if (!domainArray || domainArray.length < 2) return;
+        const [start, end] = domainArray;
+        if (!start || !end || start >= end) return;
+
         const svg = d3.select(svgRef.current);
         svg.selectAll("*").remove();
 
+        // Set <svg> dimensions to match the domain width and the ruler’s height
+        const width = scale(end); // scale(end) should be the right edge
         svg.attr("width", width);
         svg.attr("height", defaults.rulerHeight);
 
-        drawHelper.drawRuler(scale, svg, timeRanges, defaults, "2w");
+        // Draw the top time axis (just daily marks)
+        drawHelper.drawRuler(
+            scale,
+            svg,
+            { start, end },
+            defaults,
+            "day" // daily increments
+        );
 
-    }, [timeRanges, width, defaults, scale]);
+    }, [domainArray, defaults, scale]);
 
     return (
         <div className="gantt-ruler">
-            <svg xmlns="http://www.w3.org/2000/svg" ref={svgRef}/>
+            <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" />
         </div>
     );
 }

@@ -38,41 +38,60 @@ function formatRangeDisplay(start, end) {
 }
 
 function GanttToolbar() {
-    // Read from store
-    const snapEnabled = useGanttStore(state => state.snapEnabled);
-    const setSnapEnabled = useGanttStore(state => state.setSnapEnabled);
+    // ----- Existing store values -----
+    const snapEnabled          = useGanttStore(state => state.snapEnabled);
+    const setSnapEnabled       = useGanttStore(state => state.setSnapEnabled);
 
-    const snapIncrement = useGanttStore(state => state.snapIncrement);
-    const setSnapIncrement = useGanttStore(state => state.setSnapIncrement);
+    const snapIncrement        = useGanttStore(state => state.snapIncrement);
+    const setSnapIncrement     = useGanttStore(state => state.setSnapIncrement);
 
-    // NEW: enforceConstraints toggle
-    const enforceConstraints = useGanttStore(state => state.enforceConstraints);
+    const enforceConstraints   = useGanttStore(state => state.enforceConstraints);
     const setEnforceConstraints = useGanttStore(state => state.setEnforceConstraints);
 
-    const timeRanges = useGanttStore(state => state.timeRanges);
+    const timeRanges           = useGanttStore(state => state.timeRanges);
 
+    // ----- NEW PAGINATION / TIME-SPAN SWITCH -----
+    const pageMode             = useGanttStore(state => state.pageMode);
+    const setPageMode          = useGanttStore(state => state.setPageMode);
+
+    // Instead of calling it "weekSpan", now we store the actual "timeSpanDays" (7,14,30).
+    const timeSpanDays         = useGanttStore(state => state.timeSpanDays);
+    const setTimeSpanDays      = useGanttStore(state => state.setTimeSpanDays);
+
+    const goPrevPage           = useGanttStore(state => state.goPrevPage);
+    const goNextPage           = useGanttStore(state => state.goNextPage);
+
+    // The final "domain" used for drawing after pagination/clamping
+    const domain = useGanttStore(state => state.domain);
+
+    // Show domain-based range text if available
     const rangeText = React.useMemo(() => {
+        if (domain && domain.length === 2 && domain[0] && domain[1]) {
+            return formatRangeDisplay(domain[0], domain[1]);
+        }
         if (!timeRanges.start || !timeRanges.end) return "";
         return formatRangeDisplay(timeRanges.start, timeRanges.end);
-    }, [timeRanges]);
+    }, [domain, timeRanges]);
 
     const handleSnapEnabledChange = () => {
         setSnapEnabled(!snapEnabled);
     };
 
     const handleIntervalChange = (event) => {
-        const ms = Number(event.target.value);
-        setSnapIncrement(ms);
+        setSnapIncrement(Number(event.target.value));
     };
 
-    // NEW: toggle enforceConstraints
     const handleEnforceConstraintsChange = () => {
         setEnforceConstraints(!enforceConstraints);
     };
 
+    const handlePageModeChange = (e) => {
+        setPageMode(e.target.checked);
+    };
+
     return (
         <div className="gantt-upper-toolbar">
-            {/* Left side: snapping + new enforceConstraints config */}
+            {/* Left side: snapping + constraints */}
             <div className="gantt-upper-toolbar-left">
 
                 {/* Snap checkbox */}
@@ -95,7 +114,7 @@ function GanttToolbar() {
                     <option value={3600000}>1 Hour</option>    {/* 60*60*1000 */}
                 </select>
 
-                {/* NEW: Enforce Constraints checkbox */}
+                {/* Enforce Constraints checkbox */}
                 <label style={{ marginLeft: "20px" }}>
                     <input
                         type="checkbox"
@@ -104,11 +123,68 @@ function GanttToolbar() {
                     />
                     {" "}Enforce Constraints
                 </label>
+
+                {/* ----- NEW: PAGE MODE SWITCH ----- */}
+                <label style={{ marginLeft: "20px" }}>
+                    <input
+                        type="checkbox"
+                        checked={pageMode}
+                        onChange={handlePageModeChange}
+                    />
+                    {" "}Page Mode
+                </label>
+
+                {/* ----- NEW: TIME-SPAN SWITCH (1w, 2w, 1m) ----- */}
+                {pageMode && (
+                    <div style={{ marginLeft: "20px", display: "inline-flex", gap: "10px" }}>
+                        <label>
+                            <input
+                                type="radio"
+                                name="timeSpan"
+                                checked={timeSpanDays === 7}
+                                onChange={() => setTimeSpanDays(7)}
+                            />
+                            {" "}1 Week
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="timeSpan"
+                                checked={timeSpanDays === 14}
+                                onChange={() => setTimeSpanDays(14)}
+                            />
+                            {" "}2 Weeks
+                        </label>
+                        <label>
+                            <input
+                                type="radio"
+                                name="timeSpan"
+                                checked={timeSpanDays === 30}
+                                onChange={() => setTimeSpanDays(30)}
+                            />
+                            {" "}1 Month
+                        </label>
+                    </div>
+                )}
+
             </div>
 
-            {/* Right side: date range display */}
+            {/* Right side: date range display and pagination buttons */}
             <div className="gantt-upper-toolbar-right">
+                {/* If pageMode is ON, show Prev/Next buttons */}
+                {pageMode && (
+                    <button onClick={goPrevPage} style={{ marginRight: "10px" }}>
+                        &lt;
+                    </button>
+                )}
+
                 {rangeText}
+
+                {pageMode && (
+                    <button onClick={goNextPage} style={{ marginLeft: "10px" }}>
+                        &gt;
+                    </button>
+                )}
             </div>
         </div>
     );
