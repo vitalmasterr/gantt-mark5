@@ -1,6 +1,5 @@
 // src\components\Gantt\useGanttStore.js
 import {create} from "zustand";
-import ganttHelpers from "./ganttHelpers.js";
 import * as d3 from "d3";
 
 /**
@@ -49,13 +48,13 @@ function buildVisibleTasks(tree, collapsedMap, level = 0) {
  * Count time range over all tasks in a list.
  */
 function computeTimeRange(tasks) {
-    if (!tasks || !tasks.length) return { start: null, end: null };
+    if (!tasks || !tasks.length) return {start: null, end: null};
     let [start, end] = [tasks[0].start, tasks[0].end];
     tasks.forEach(t => {
         if (t.start < start) start = t.start;
         if (t.end > end) end = t.end;
     });
-    return { start, end };
+    return {start, end};
 }
 
 const useGanttStore = create((set, get) => ({
@@ -85,12 +84,12 @@ const useGanttStore = create((set, get) => ({
     // Snapping config
     snapEnabled: true,
     snapIncrement: 24 * 60 * 60 * 1000, // 1 day in ms
-    setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
-    setSnapIncrement: (ms) => set({ snapIncrement: ms }),
+    setSnapEnabled: (enabled) => set({snapEnabled: enabled}),
+    setSnapIncrement: (ms) => set({snapIncrement: ms}),
 
     // NEW: enforceConstraints toggle
     enforceConstraints: false,
-    setEnforceConstraints: (flag) => set({ enforceConstraints: flag }),
+    setEnforceConstraints: (flag) => set({enforceConstraints: flag}),
 
     /**
      * Rebuild entire store state after tasks or collapsed states change.
@@ -110,7 +109,7 @@ const useGanttStore = create((set, get) => ({
         const rng = computeTimeRange(visible);
         // Compute scale
         const defaults = state.defaults;
-        const day = 24*60*60*1000;
+        const day = 24 * 60 * 60 * 1000;
         const start = rng.start, end = rng.end;
         let scale = null, totalDays = 0, domain = null, width = 0;
         if (start && end && start < end) {
@@ -136,7 +135,7 @@ const useGanttStore = create((set, get) => ({
      */
     setTasks: (tasks) => {
         set(() => {
-            return { rawTasks: tasks };
+            return {rawTasks: tasks};
         });
         get().rebuildAll(tasks);
     },

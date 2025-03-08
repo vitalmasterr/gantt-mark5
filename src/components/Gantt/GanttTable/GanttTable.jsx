@@ -1,6 +1,6 @@
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
-import ganttHelpers from "../ganttHelpers.js";
+import ganttHelpers from "../logic/ganttHelpers.js";
 
 function GanttTable() {
     const tasks = useGanttStore(state => state.visibleTasks);

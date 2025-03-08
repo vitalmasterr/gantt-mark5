@@ -2,7 +2,7 @@
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
 import * as d3 from "d3";
-import drawHelper from "../drawHelper.js";
+import drawHelper from "../logic/drawHelper.js";
 
 function GanttCanvas() {
     // Pull everything from the store
