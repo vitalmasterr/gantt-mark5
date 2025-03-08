@@ -56,6 +56,9 @@ function drawEverything({
         return mx;
     }
 
+    // --- 4 HOURS IN MS (minimum allowed duration) ---
+    const MIN_MS = 4 * 60 * 60 * 1000;  // 4 hours
+
     // ========== ENTIRE BAR DRAG ==========
     const dragBar = d3.drag()
         .on("start", function (event, d) {
@@ -100,12 +103,22 @@ function drawEverything({
             me.start = new Date(me.start.getTime() + shiftMs);
             me.end = new Date(me.end.getTime() + shiftMs);
 
+            // Constraints (either BFS or clamp)
             if (enforceConstraints) {
                 clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "move");
             } else {
                 doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
             }
 
+            // After constraints, ensure we never drop below 4 hours
+            const duration = me.end.getTime() - me.start.getTime();
+            if (duration < MIN_MS) {
+                // We'll just expand the end by however short we are
+                const diff = MIN_MS - duration;
+                me.end = new Date(me.end.getTime() + diff);
+            }
+
+            // Re-draw ephemeral
             const merged = mergeEphemeral(tasks, ephemeralMap);
             renderTasksAndDependencies(svg, scale, merged, defaults);
             svg.selectAll(".task-bar").filter(x => x.id === d.id).attr("stroke", "black");
@@ -149,16 +162,23 @@ function drawEverything({
             const desired = domainX - d.__grabOffset;
             const newStart = maybeSnap(new Date(desired), snapEnabled, snapIncrement);
 
-            // ensure we don't cross the end
+            // ensure we don't cross the end altogether
             if (newStart.getTime() > me.end.getTime()) {
                 return;
             }
             me.start = newStart;
 
+            // Constraints
             if (enforceConstraints) {
                 clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "left");
             } else {
                 doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
+            }
+
+            // Enforce min 4-hour duration
+            const duration = me.end.getTime() - me.start.getTime();
+            if (duration < MIN_MS) {
+                me.start = new Date(me.end.getTime() - MIN_MS);
             }
 
             const merged = mergeEphemeral(tasks, ephemeralMap);
@@ -210,10 +230,17 @@ function drawEverything({
             }
             me.end = newEnd;
 
+            // Constraints
             if (enforceConstraints) {
                 clampTaskToConstraints(me, ephemeralMap, downstreamMap, upstreamMap, "right");
             } else {
                 doTwoWayBFS(d.id, ephemeralMap, downstreamMap, upstreamMap);
+            }
+
+            // Enforce min 4-hour duration
+            const duration = me.end.getTime() - me.start.getTime();
+            if (duration < MIN_MS) {
+                me.end = new Date(me.start.getTime() + MIN_MS);
             }
 
             const merged = mergeEphemeral(tasks, ephemeralMap);
