@@ -45,6 +45,10 @@ function GanttToolbar() {
     const snapIncrement = useGanttStore(state => state.snapIncrement);
     const setSnapIncrement = useGanttStore(state => state.setSnapIncrement);
 
+    // NEW: enforceConstraints toggle
+    const enforceConstraints = useGanttStore(state => state.enforceConstraints);
+    const setEnforceConstraints = useGanttStore(state => state.setEnforceConstraints);
+
     const timeRanges = useGanttStore(state => state.timeRanges);
 
     const rangeText = React.useMemo(() => {
@@ -61,10 +65,17 @@ function GanttToolbar() {
         setSnapIncrement(ms);
     };
 
+    // NEW: toggle enforceConstraints
+    const handleEnforceConstraintsChange = () => {
+        setEnforceConstraints(!enforceConstraints);
+    };
+
     return (
         <div className="gantt-upper-toolbar">
-            {/* Left side: snapping config */}
+            {/* Left side: snapping + new enforceConstraints config */}
             <div className="gantt-upper-toolbar-left">
+
+                {/* Snap checkbox */}
                 <label style={{ marginRight: "8px" }}>
                     <input
                         type="checkbox"
@@ -83,6 +94,16 @@ function GanttToolbar() {
                     <option value={28800000}>8 Hours</option>  {/* 8*60*60*1000 */}
                     <option value={3600000}>1 Hour</option>    {/* 60*60*1000 */}
                 </select>
+
+                {/* NEW: Enforce Constraints checkbox */}
+                <label style={{ marginLeft: "20px" }}>
+                    <input
+                        type="checkbox"
+                        checked={enforceConstraints}
+                        onChange={handleEnforceConstraintsChange}
+                    />
+                    {" "}Enforce Constraints
+                </label>
             </div>
 
             {/* Right side: date range display */}

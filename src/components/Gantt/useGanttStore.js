@@ -66,7 +66,6 @@ const useGanttStore = create((set, get) => ({
     // Flattened (and possibly filtered by collapsed parents)
     visibleTasks: [],
     // For collapsing: { [taskId]: true/false }
-    // if 'true' => that node is collapsed; children won't appear in visibleTasks
     collapsed: {},
 
     // Current time range for visible tasks
@@ -88,6 +87,10 @@ const useGanttStore = create((set, get) => ({
     snapIncrement: 24 * 60 * 60 * 1000, // 1 day in ms
     setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
     setSnapIncrement: (ms) => set({ snapIncrement: ms }),
+
+    // NEW: enforceConstraints toggle
+    enforceConstraints: false,
+    setEnforceConstraints: (flag) => set({ enforceConstraints: flag }),
 
     /**
      * Rebuild entire store state after tasks or collapsed states change.
@@ -162,3 +165,4 @@ const useGanttStore = create((set, get) => ({
 }));
 
 export default useGanttStore;
+

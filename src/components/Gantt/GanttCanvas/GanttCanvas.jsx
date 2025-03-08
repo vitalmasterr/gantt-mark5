@@ -5,7 +5,7 @@ import * as d3 from "d3";
 import drawHelper from "../drawHelper.js";
 
 function GanttCanvas() {
-    // IMPORTANT: now we use visibleTasks instead of the old tasks
+    // Pull everything from the store
     const tasks = useGanttStore(state => state.visibleTasks);
     const timeRanges = useGanttStore(state => state.timeRanges);
     const defaults = useGanttStore(state => state.defaults);
@@ -15,17 +15,24 @@ function GanttCanvas() {
     const snapIncrement = useGanttStore(state => state.snapIncrement);
     const setTasks = useGanttStore(state => state.setTasks);
 
+    // NEW: read enforceConstraints from the store
+    const enforceConstraints = useGanttStore(state => state.enforceConstraints);
+
     const svgRef = React.useRef(null);
 
     React.useEffect(() => {
+        // If we have no valid time range, do nothing
         if (!timeRanges?.start || !timeRanges?.end || timeRanges.start >= timeRanges.end) {
             return;
         }
+
+        // Select or create the <svg> using d3
         const svg = d3.select(svgRef.current);
 
-        // Clear the SVG each render
+        // Clear the SVG each render, so we can attach new drag handlers
         svg.selectAll("*").remove();
 
+        // Draw everything
         drawHelper.drawEverything({
             svg,
             scale,
@@ -36,6 +43,8 @@ function GanttCanvas() {
             snapEnabled,
             snapIncrement,
             setTasks,
+            // Pass enforceConstraints into drawEverything:
+            enforceConstraints,
         });
 
     }, [
@@ -46,7 +55,9 @@ function GanttCanvas() {
         defaults,
         snapEnabled,
         snapIncrement,
-        setTasks
+        setTasks,
+        // IMPORTANT: add enforceConstraints to dependencies
+        enforceConstraints
     ]);
 
     return (
