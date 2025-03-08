@@ -1,7 +1,8 @@
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
 import * as d3 from "d3";
-import {drawHelper} from "../ganttHelpers.js";
+import drawHelper from "../drawHelper.js";
+
 
 function GanttRuler() {
     const timeRanges = useGanttStore(state => state.timeRanges);

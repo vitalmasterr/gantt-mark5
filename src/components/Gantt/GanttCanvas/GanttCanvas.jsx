@@ -1,8 +1,8 @@
 // src\components\Gantt\GanttCanvas\GanttCanvas.jsx
 import React from 'react';
 import useGanttStore from "../useGanttStore.js";
-import {drawHelper} from "../ganttHelpers.js";
 import * as d3 from "d3";
+import drawHelper from "../drawHelper.js";
 
 function GanttCanvas() {
     // IMPORTANT: now we use visibleTasks instead of the old tasks
