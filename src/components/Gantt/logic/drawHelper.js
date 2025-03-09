@@ -157,23 +157,25 @@ function clampMs(ms, minMs, maxMs) {
 /**
  * REPLACE your existing "function drawTasks" in drawHelper.js with this entire block.
  */
+/**
+ * REPLACE your existing "function drawTasks" in drawHelper.js with this entire block.
+ *
+ * Key change: if the bar's left X is negative, we clamp the triangle apex at x=6,
+ * ensuring at least part of the triangle is always visible within the SVG.
+ */
 function drawTasks(svg, scale, tasks, cfg) {
     // 1) Remove old groups
     svg.selectAll(".task-group").remove();
     svg.selectAll(".summary-group").remove();
 
-    // ----------------------------
-    // Small helpers
-    // ----------------------------
+    // --- Helpers for summary coverage ---
     function buildTaskIndexMap(visibleTasks) {
-        // task.id -> row index in the flattened array
         const map = new Map();
         visibleTasks.forEach((t, i) => {
             map.set(t.id, i);
         });
         return map;
     }
-
     function collectAllDescendantIds(task, outSet) {
         if (!task.children) return;
         for (const c of task.children) {
@@ -182,11 +184,8 @@ function drawTasks(svg, scale, tasks, cfg) {
         }
     }
 
-    // ----------------------------
-    // 2) Build index map; store each summary’s children’s row coverage
-    // ----------------------------
+    // --- Build row index map, handle summary child coverage ---
     const taskIndexMap = buildTaskIndexMap(tasks);
-
     for (const t of tasks) {
         if (!t.isSummary) continue;
         const descIds = new Set();
@@ -211,81 +210,68 @@ function drawTasks(svg, scale, tasks, cfg) {
         }
     }
 
-    // ----------------------------
-    // 3) Domain & row layout
-    // ----------------------------
+    // --- Domain & geometry ---
     const [domainStart, domainEnd] = scale.domain();
     const domainMin = domainStart.getTime();
     const domainMax = domainEnd.getTime();
     const gap = 0.2 * cfg.rowHeight;
 
-    // Separate summaries vs normal tasks so we can draw summaries first
+    // Separate normal vs summary
     const summaryTasks = tasks.filter(t => t.isSummary);
     const normalTasks  = tasks.filter(t => !t.isSummary);
 
-    // ----------------------------
-    // 4) Draw Summaries first
-    // ----------------------------
+    // =================================================================
+    //  Draw Summaries
+    // =================================================================
     const gSummaries = svg.selectAll(".summary-group")
         .data(summaryTasks, d => d.id)
         .join("g")
         .attr("class", "summary-group");
 
     gSummaries.each(function(d) {
-        const summaryRowIndex = taskIndexMap.get(d.id) ?? 0;
-
-        // Pinned times, if any
+        // pinned start/end?
         const pinnedStart = d.start instanceof Date ? d.start.getTime() : null;
         const pinnedEnd   = d.end   instanceof Date ? d.end.getTime()   : null;
 
-        // Child earliest/latest
+        // child earliest/latest
         let childEarliest = Infinity, childLatest = -Infinity;
         if (d.children) {
-            // Gather all visible child times
             for (const c of d.children) {
                 if (c.start && c.end) {
-                    const cS = c.start.getTime();
-                    const cE = c.end.getTime();
-                    if (cS < childEarliest) childEarliest = cS;
-                    if (cE > childLatest)   childLatest   = cE;
+                    const cs = c.start.getTime();
+                    const ce = c.end.getTime();
+                    if (cs < childEarliest) childEarliest = cs;
+                    if (ce > childLatest)   childLatest   = ce;
                 }
             }
         }
 
-        // Decide final summary start/end in ms
         let sumStartMs = pinnedStart ?? childEarliest;
         let sumEndMs   = pinnedEnd   ?? childLatest;
-
-        // --- IMPORTANT FIX: Fallback if we still have no valid times ---
         if (!Number.isFinite(sumStartMs) || !Number.isFinite(sumEndMs)) {
-            // Force a small 1-day box at the domain’s left side
             sumStartMs = domainMin;
-            sumEndMs   = domainMin + (24 * 60 * 60 * 1000); // 1 day
+            sumEndMs   = domainMin + (24*60*60*1000);
         }
 
-        // Skip if fully out of domain? Or clamp partial:
         if (sumEndMs < domainMin || sumStartMs > domainMax) {
-            return;
+            return; // fully out of domain
         }
+        // clamp partial
         const barStartMs = Math.max(sumStartMs, domainMin);
         const barEndMs   = Math.min(sumEndMs, domainMax);
         const x = scale(barStartMs);
         const w = scale(barEndMs) - x;
 
-        // The child coverage
-        const childTop    = d._summaryTopRow;
-        const childBottom = d._summaryBottomRow;
-
-        // We want the rectangle to start at the summary’s own row.
-        // So topRow is the smaller of (summary row, childTop).
-        const topRow = Math.min(summaryRowIndex, childTop);
-        const bottomRow = Math.max(summaryRowIndex, childBottom);
+        // summary's child coverage
+        const summaryRowIndex = taskIndexMap.get(d.id) ?? 0;
+        const topRow    = Math.min(summaryRowIndex, d._summaryTopRow);
+        const bottomRow = Math.max(summaryRowIndex, d._summaryBottomRow);
 
         const barTopY    = topRow * cfg.rowHeight + gap;
         const barBottomY = (bottomRow + 1) * cfg.rowHeight - gap;
         const barHeight  = barBottomY - barTopY;
 
-        // Draw the summary rectangle
+        // main rectangle
         const g = d3.select(this);
         g.append("rect")
             .attr("class", "summary-bar")
@@ -297,7 +283,7 @@ function drawTasks(svg, scale, tasks, cfg) {
             .attr("stroke", "none")
             .attr("stroke-width", 2);
 
-        // Optionally label near the top:
+        // label
         if (w > 40) {
             g.append("text")
                 .attr("x", x + 10)
@@ -306,11 +292,39 @@ function drawTasks(svg, scale, tasks, cfg) {
                 .style("font-weight", 600)
                 .text(d.name);
         }
+
+        // summary row center for triangles
+        const summaryMidY = summaryRowIndex * cfg.rowHeight + (cfg.rowHeight / 2);
+
+        // --- left triangle clamp ---
+        if (sumStartMs < domainMin) {
+            let apexX = x;
+            // if apex would be negative, clamp to 6
+            if (apexX < 6) apexX = 6;
+
+            g.append("path")
+                .attr("class", "summary-left-triangle")
+                .attr("d", `M${apexX},${summaryMidY}
+                            L${apexX-6},${summaryMidY-6}
+                            L${apexX-6},${summaryMidY+6}Z`)
+                .attr("fill", "#cc0000");
+        }
+
+        // --- right triangle (no clamp needed if domain's max is large enough) ---
+        if (sumEndMs > domainMax) {
+            const barRightX = x + w;
+            g.append("path")
+                .attr("class", "summary-right-triangle")
+                .attr("d", `M${barRightX},${summaryMidY}
+                            L${barRightX+6},${summaryMidY-6}
+                            L${barRightX+6},${summaryMidY+6}Z`)
+                .attr("fill", "#cc0000");
+        }
     });
 
-    // ----------------------------
-    // 5) Draw normal (non-summary) tasks
-    // ----------------------------
+    // =================================================================
+    //  Draw Normal Tasks
+    // =================================================================
     const gTask = svg.selectAll(".task-group")
         .data(normalTasks, d => d.id)
         .join("g")
@@ -320,8 +334,9 @@ function drawTasks(svg, scale, tasks, cfg) {
         if (!d.start || !d.end) return;
         const startMs = d.start.getTime();
         const endMs   = d.end.getTime();
-        if (endMs < domainMin || startMs > domainMax) return;
+        if (endMs < domainMin || startMs > domainMax) return; // fully out of domain
 
+        // clamp portion
         const barStartMs = Math.max(startMs, domainMin);
         const barEndMs   = Math.min(endMs, domainMax);
         const x = scale(barStartMs);
@@ -332,7 +347,9 @@ function drawTasks(svg, scale, tasks, cfg) {
         const barHeight = cfg.rowHeight - gap * 2;
         const y = rowY + (cfg.rowHeight - barHeight) / 2;
 
-        d3.select(this).append("rect")
+        // main rectangle
+        const gRow = d3.select(this);
+        gRow.append("rect")
             .attr("class", "task-bar")
             .attr("x", x)
             .attr("y", y)
@@ -344,10 +361,11 @@ function drawTasks(svg, scale, tasks, cfg) {
             .attr("stroke-width", 1)
             .style("filter", "drop-shadow(0px 1px 2px rgba(0,0,0,0.2))");
 
+        // label if there's enough room
         if (w > 30) {
-            d3.select(this).append("text")
+            gRow.append("text")
                 .attr("x", x + 10)
-                .attr("y", y + barHeight * 0.5 + 5)
+                .attr("y", y + barHeight / 2 + 5)
                 .attr("fill", "#fff")
                 .attr("font-size", "15px")
                 .attr("font-family", "Roboto")
@@ -357,35 +375,48 @@ function drawTasks(svg, scale, tasks, cfg) {
                 .text(d.name);
         }
 
-        // Show small triangles if truncated by the domain edges
+        // --- Triangles last => on top
+        const midY = y + barHeight / 2;
+
+        // LEFT TRIANGLE CLAMP
         if (startMs < domainMin) {
-            const midY = y + barHeight / 2;
-            d3.select(this).append("path")
-                .attr("d", `M${x},${midY} L${x-6},${midY-6} L${x-6},${midY+6}Z`)
-                .attr("fill", "#cc0000");
-        }
-        if (endMs > domainMax) {
-            const barRightX = x + w;
-            const midY = y + barHeight / 2;
-            d3.select(this).append("path")
-                .attr("d", `M${barRightX},${midY} L${barRightX+6},${midY-6} L${barRightX+6},${midY+6}Z`)
+            let apexX = x;
+            // if apexX is negative, clamp to 6 so it's visible in the svg
+            if (apexX < 6) apexX = 6;
+
+            gRow.append("path")
+                .attr("class", "task-left-triangle")
+                .attr("d", `M${apexX},${midY} 
+                            L${apexX-6},${midY-6} 
+                            L${apexX-6},${midY+6}Z`)
                 .attr("fill", "#cc0000");
         }
 
-        // Left & right invisible drag handles
+        // RIGHT TRIANGLE (no clamp needed)
+        if (endMs > domainMax) {
+            const barRightX = x + w;
+            gRow.append("path")
+                .attr("class", "task-right-triangle")
+                .attr("d", `M${barRightX},${midY} 
+                            L${barRightX+6},${midY-6} 
+                            L${barRightX+6},${midY+6}Z`)
+                .attr("fill", "#cc0000");
+        }
+
+        // invisible drag handles
         const handleW = 8;
-        d3.select(this).append("rect")
+        gRow.append("rect")
             .attr("class", "task-handle-left")
-            .attr("x", x - handleW / 2)
+            .attr("x", x - handleW/2)
             .attr("y", y)
             .attr("width", handleW)
             .attr("height", barHeight)
             .attr("fill", "transparent")
             .style("cursor", "ew-resize");
 
-        d3.select(this).append("rect")
+        gRow.append("rect")
             .attr("class", "task-handle-right")
-            .attr("x", x + w - handleW / 2)
+            .attr("x", x + w - handleW/2)
             .attr("y", y)
             .attr("width", handleW)
             .attr("height", barHeight)
@@ -393,6 +424,7 @@ function drawTasks(svg, scale, tasks, cfg) {
             .style("cursor", "ew-resize");
     });
 }
+
 
 
 /**
