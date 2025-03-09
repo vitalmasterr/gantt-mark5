@@ -151,68 +151,214 @@ function clampMs(ms, minMs, maxMs) {
  * 3a) Draw tasks: normal or summary
  *   - Summary tasks compute any unpinned side from their entire descendant range.
  */
+/**
+ * REPLACE your existing "function drawTasks" in drawHelper.js with this entire block.
+ */
+/**
+ * REPLACE your existing "function drawTasks" in drawHelper.js with this entire block.
+ */
 function drawTasks(svg, scale, tasks, cfg) {
+    // 1) Remove old groups
     svg.selectAll(".task-group").remove();
+    svg.selectAll(".summary-group").remove();
 
-    const domain = scale.domain();
-    const domainMin = domain[0].getTime();
-    const domainMax = domain[1].getTime();
+    // ----------------------------
+    // Small helpers
+    // ----------------------------
+    function buildTaskIndexMap(visibleTasks) {
+        // task.id -> row index in the flattened array
+        const map = new Map();
+        visibleTasks.forEach((t, i) => {
+            map.set(t.id, i);
+        });
+        return map;
+    }
 
+    function collectAllDescendantIds(task, outSet) {
+        // recursively gather all child IDs for a summary
+        if (!task.children) return;
+        for (const c of task.children) {
+            outSet.add(c.id);
+            collectAllDescendantIds(c, outSet);
+        }
+    }
+
+    // ----------------------------
+    // 2) Build index map, then store each summary's children's row coverage
+    // ----------------------------
+    const taskIndexMap = buildTaskIndexMap(tasks);
+
+    for (const t of tasks) {
+        if (!t.isSummary) continue;
+        const descIds = new Set();
+        collectAllDescendantIds(t, descIds);
+
+        let minRow = Infinity, maxRow = -Infinity;
+        for (const childId of descIds) {
+            if (taskIndexMap.has(childId)) {
+                const r = taskIndexMap.get(childId);
+                if (r < minRow) minRow = r;
+                if (r > maxRow) maxRow = r;
+            }
+        }
+        // If children are visible, store their top/bottom rows
+        if (minRow !== Infinity && maxRow !== -Infinity) {
+            t._summaryTopRow = minRow;
+            t._summaryBottomRow = maxRow;
+        } else {
+            // fallback: no visible children => just summary row
+            const myRow = taskIndexMap.get(t.id) ?? 0;
+            t._summaryTopRow = myRow;
+            t._summaryBottomRow = myRow;
+        }
+    }
+
+    // ----------------------------
+    // 3) Time domain & row layout
+    // ----------------------------
+    const [domainStart, domainEnd] = scale.domain();
+    const domainMin = domainStart.getTime();
+    const domainMax = domainEnd.getTime();
     const gap = 0.2 * cfg.rowHeight;
 
+    // Separate summaries vs. normal tasks so we can draw the summaries behind
+    const summaryTasks = tasks.filter(t => t.isSummary);
+    const normalTasks  = tasks.filter(t => !t.isSummary);
+
+    // ----------------------------
+    // 4) Draw Summaries first
+    // ----------------------------
+    const gSummaries = svg.selectAll(".summary-group")
+        .data(summaryTasks, d => d.id)
+        .join("g")
+        .attr("class", "summary-group");
+
+    gSummaries.each(function(d) {
+        // The summary row itself
+        const summaryRowIndex = taskIndexMap.get(d.id) ?? 0;
+
+        // Combine pinned vs. children range:
+        const pinnedStart = d.start instanceof Date ? d.start.getTime() : null;
+        const pinnedEnd   = d.end   instanceof Date ? d.end.getTime()   : null;
+
+        // Find children’s earliest / latest
+        let childEarliest = Infinity, childLatest = -Infinity;
+        const descIds = new Set();
+        collectAllDescendantIds(d, descIds);
+        for (const cid of descIds) {
+            const childObj = tasks.find(x => x.id === cid);
+            if (!childObj || !childObj.start || !childObj.end) continue;
+            const cS = childObj.start.getTime();
+            const cE = childObj.end.getTime();
+            if (cS < childEarliest) childEarliest = cS;
+            if (cE > childLatest)   childLatest   = cE;
+        }
+
+        // Decide final summary start/end in ms
+        // If pinned is missing, fallback to children’s range
+        let sumStartMs = pinnedStart ?? childEarliest;
+        let sumEndMs   = pinnedEnd   ?? childLatest;
+
+        // If the summary truly has no pinned times & no child times, skip it
+        if (!Number.isFinite(sumStartMs) || !Number.isFinite(sumEndMs)) {
+            return;
+        }
+
+        // If you prefer the summary always covers all children
+        // (even if pinned times are inside them), uncomment these lines:
+        // sumStartMs = pinnedStart != null ? Math.min(pinnedStart, childEarliest) : childEarliest;
+        // sumEndMs   = pinnedEnd   != null ? Math.max(pinnedEnd, childLatest)     : childLatest;
+
+        // Skip if fully out of domain
+        if (sumEndMs < domainMin || sumStartMs > domainMax) {
+            return;
+        }
+
+        // clamp partial
+        const barStartMs = Math.max(sumStartMs, domainMin);
+        const barEndMs   = Math.min(sumEndMs, domainMax);
+        const x = scale(barStartMs);
+        const w = scale(barEndMs) - x;
+
+        // The child coverage
+        const childTop    = d._summaryTopRow;
+        const childBottom = d._summaryBottomRow;
+
+        // Now we ensure the rectangle starts at the summary's own row (the user’s request!)
+        // i.e. topRow = the *smallest* of (summary row, childTop).
+        // That way it includes the summary row itself, plus all children below.
+        const topRow = Math.min(summaryRowIndex, childTop);
+        const bottomRow = Math.max(summaryRowIndex, childBottom);
+
+        const barTopY    = topRow * cfg.rowHeight + gap;
+        const barBottomY = (bottomRow + 1) * cfg.rowHeight - gap;
+        const barHeight  = barBottomY - barTopY;
+
+        const colorSummaryFill = "rgba(51,149,214,0.1)";
+        const colorSummaryStroke = "none"//"rgba(80,80,80,0.8)";
+        
+        // Big gray rectangle
+        d3.select(this).append("rect")
+            .attr("class", "summary-bar")
+            .attr("x", x)
+            .attr("y", barTopY)
+            .attr("width", w)
+            .attr("height", barHeight)
+            .attr("fill", colorSummaryFill)
+            .attr("stroke", colorSummaryStroke)
+            .attr("stroke-width", 2);
+
+        // vertical edges
+        d3.select(this).append("line")
+            .attr("x1", x)
+            .attr("y1", barTopY)
+            .attr("x2", x)
+            .attr("y2", barTopY + barHeight)
+            .attr("stroke", colorSummaryStroke)
+            .attr("stroke-width", 2);
+
+        d3.select(this).append("line")
+            .attr("x1", x + w)
+            .attr("y1", barTopY)
+            .attr("x2", x + w)
+            .attr("y2", barTopY + barHeight)
+            .attr("stroke", colorSummaryStroke)
+            .attr("stroke-width", 2);
+
+        // optional label near top
+        if (w > 40) {
+            d3.select(this).append("text")
+                .attr("x", x + 10)
+                .attr("y", barTopY + 20)
+                .attr("fill", "#000")
+                .style("font-weight", 600)
+                .text(d.name);
+        }
+    });
+
+    // ----------------------------
+    // 5) Draw normal (non-summary) tasks second
+    // ----------------------------
     const gTask = svg.selectAll(".task-group")
-        .data(tasks, d => d.id)
+        .data(normalTasks, d => d.id)
         .join("g")
         .attr("class", "task-group");
 
-    gTask.each(function(d, i) {
-        let drawStart = d.start;
-        let drawEnd   = d.end;
-
-        // For summary tasks, fill in missing side(s) from all descendants
-        if (d.isSummary) {
-            const { earliest, latest } = getMinMaxFromChildren(d);
-
-            // If no pinned start => use earliest
-            if (!d.start && earliest) {
-                drawStart = earliest;
-            }
-            // If no pinned end => use latest
-            if (!d.end && latest) {
-                drawEnd = latest;
-            }
-        }
-
-        // If still missing, skip drawing
-        if (!drawStart || !drawEnd) return;
-
-        const startMs = drawStart.getTime();
-        const endMs   = drawEnd.getTime();
-
-        // If completely out of the visible domain, skip
+    gTask.each(function(d) {
+        if (!d.start || !d.end) return;
+        const startMs = d.start.getTime();
+        const endMs   = d.end.getTime();
         if (endMs < domainMin || startMs > domainMax) return;
 
-        // clamp
-        const barStartMs = clampMs(startMs, domainMin, domainMax);
-        const barEndMs   = clampMs(endMs, domainMin, domainMax);
-
+        const barStartMs = Math.max(startMs, domainMin);
+        const barEndMs   = Math.min(endMs, domainMax);
         const x = scale(barStartMs);
         const w = scale(barEndMs) - x;
-        const rowY = i * cfg.rowHeight;
 
-        const isSummary = !!d.isSummary;
-        const barHeight = isSummary
-            ? (cfg.rowHeight - gap * 2) * 0.5  // half-height for summary
-            : (cfg.rowHeight - gap * 2);
-
+        const rowIndex = taskIndexMap.get(d.id) || 0;
+        const rowY = rowIndex * cfg.rowHeight;
+        const barHeight = cfg.rowHeight - gap * 2;
         const y = rowY + (cfg.rowHeight - barHeight) / 2;
-
-        let fillColor = "#3497d9";
-        let strokeColor = "#256999";
-        if (isSummary) {
-            fillColor = "rgba(128,128,128,0.4)";
-            strokeColor = "rgba(80,80,80,0.8)";
-        }
 
         // main bar
         d3.select(this).append("rect")
@@ -222,39 +368,17 @@ function drawTasks(svg, scale, tasks, cfg) {
             .attr("width", w)
             .attr("height", barHeight)
             .attr("rx", 2)
-            .attr("fill", fillColor)
-            .attr("stroke", strokeColor)
+            .attr("fill", "#3497d9")
+            .attr("stroke", "#256999")
             .attr("stroke-width", 1)
             .style("filter", "drop-shadow(0px 1px 2px rgba(0,0,0,0.2))");
 
-        // summary edges
-        if (isSummary) {
-            d3.select(this).append("line")
-                .attr("x1", x)
-                .attr("y1", y)
-                .attr("x2", x)
-                .attr("y2", y + barHeight)
-                .attr("stroke", strokeColor)
-                .attr("stroke-width", 2);
-
-            d3.select(this).append("line")
-                .attr("x1", x + w)
-                .attr("y1", y)
-                .attr("x2", x + w)
-                .attr("y2", y + barHeight)
-                .attr("stroke", strokeColor)
-                .attr("stroke-width", 2);
-        }
-
-        // label if width > 30
-        const labelX = x + 10;
-        const labelY = y + barHeight * 0.5 + 5;
+        // label if wide enough
         if (w > 30) {
             d3.select(this).append("text")
-                .attr("class", `task-label task-label-${d.id}`)
-                .attr("x", labelX)
-                .attr("y", labelY)
-                .attr("fill", isSummary ? "#000" : "#fff")
+                .attr("x", x + 10)
+                .attr("y", y + barHeight * 0.5 + 5)
+                .attr("fill", "#fff")
                 .attr("font-size", "15px")
                 .attr("font-family", "Roboto")
                 .attr("font-weight", 500)
@@ -265,46 +389,41 @@ function drawTasks(svg, scale, tasks, cfg) {
 
         // truncated arrows if out of domain
         if (startMs < domainMin) {
-            const midY = y + barHeight/2;
+            const midY = y + barHeight / 2;
             d3.select(this).append("path")
-                .attr("d", `M${x},${midY}
-                    L${x - 6},${midY - 6}
-                    L${x - 6},${midY + 6}Z`)
+                .attr("d", `M${x},${midY} L${x-6},${midY-6} L${x-6},${midY+6}Z`)
                 .attr("fill", "#cc0000");
         }
         if (endMs > domainMax) {
-            const x2 = x + w;
-            const midY = y + barHeight/2;
+            const barRightX = x + w;
+            const midY = y + barHeight / 2;
             d3.select(this).append("path")
-                .attr("d", `M${x2},${midY}
-                    L${x2 + 6},${midY - 6}
-                    L${x2 + 6},${midY + 6}Z`)
+                .attr("d", `M${barRightX},${midY} L${barRightX+6},${midY-6} L${barRightX+6},${midY+6}Z`)
                 .attr("fill", "#cc0000");
         }
 
-        // invisible resize handles if NOT summary
-        if (!isSummary) {
-            const handleW = 8;
-            d3.select(this).append("rect")
-                .attr("class", "task-handle-left")
-                .attr("x", x - handleW / 2)
-                .attr("y", y)
-                .attr("width", handleW)
-                .attr("height", barHeight)
-                .attr("fill", "transparent")
-                .style("cursor", "ew-resize");
+        // optional drag handles
+        const handleW = 8;
+        d3.select(this).append("rect")
+            .attr("class", "task-handle-left")
+            .attr("x", x - handleW / 2)
+            .attr("y", y)
+            .attr("width", handleW)
+            .attr("height", barHeight)
+            .attr("fill", "transparent")
+            .style("cursor", "ew-resize");
 
-            d3.select(this).append("rect")
-                .attr("class", "task-handle-right")
-                .attr("x", x + w - handleW / 2)
-                .attr("y", y)
-                .attr("width", handleW)
-                .attr("height", barHeight)
-                .attr("fill", "transparent")
-                .style("cursor", "ew-resize");
-        }
+        d3.select(this).append("rect")
+            .attr("class", "task-handle-right")
+            .attr("x", x + w - handleW / 2)
+            .attr("y", y)
+            .attr("width", handleW)
+            .attr("height", barHeight)
+            .attr("fill", "transparent")
+            .style("cursor", "ew-resize");
     });
 }
+
 
 /**
  * 3b) Dependencies (arrows)
