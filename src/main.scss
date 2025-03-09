@@ -1,7 +1,17 @@
 //@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap");
 
+// Forward the components directory as before
 @forward "./components";
 
+/* =======================================
+   BRAND COLORS
+   ======================================= */
+$brand-primary: #3497d9; /* matches the Gantt bar color */
+$brand-secondary: #ff7f0e; /* a warm accent color */
+
+/* =======================================
+   GLOBAL RESETS & BODY
+   ======================================= */
 * {
   margin: 0;
   padding: 0;
@@ -11,5 +21,58 @@
 body {
   font-family: 'Roboto', sans-serif;
   background-color: #111;
+  /* color: #fff;  // If you want global text color white, uncomment */
 }
 
+/* =======================================
+   SNAP DROPDOWN
+   ======================================= */
+.snap-dropdown {
+  padding: 6px 10px;
+  border: 1px solid $brand-primary;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #333;
+  font-size: 14px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: darken($brand-primary, 10%);
+  }
+
+  &:disabled {
+    background-color: #f5f5f5;
+    color: #aaa;
+    cursor: not-allowed;
+  }
+}
+
+/* =======================================
+   CHECKBOX & RADIO
+   ======================================= */
+.custom-checkbox,
+.custom-radio {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 16px; /* space between each item */
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: $brand-primary;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    margin: 0; /* remove default gap */
+
+    &:disabled {
+      accent-color: gray;
+      cursor: not-allowed;
+    }
+  }
+
+  label {
+    margin-left: 5px;
+    font-size: 14px;
+    user-select: none; /* prevent text highlighting on click */
+  }
+}

@@ -54,7 +54,6 @@ function GanttToolbar() {
     const pageMode = useGanttStore(state => state.pageMode);
     const setPageMode = useGanttStore(state => state.setPageMode);
 
-    // Instead of calling it "weekSpan", now we store the actual "timeSpanDays" (7,14,30).
     const timeSpanDays = useGanttStore(state => state.timeSpanDays);
     const setTimeSpanDays = useGanttStore(state => state.setTimeSpanDays);
 
@@ -95,77 +94,76 @@ function GanttToolbar() {
             <div className="gantt-upper-toolbar-left">
 
                 {/* Snap checkbox */}
-                <label style={{marginRight: "8px"}}>
+                <label className="custom-checkbox">
                     <input
                         type="checkbox"
                         checked={snapEnabled}
                         onChange={handleSnapEnabledChange}
                     />
-                    {" "}Snap
+                    <label>Snap</label>
                 </label>
 
+                {/* Snap interval dropdown */}
                 <select
+                    className="snap-dropdown"
                     value={snapIncrement}
                     onChange={handleIntervalChange}
                     disabled={!snapEnabled}
                 >
                     <option value={86400000}>Day</option>
-                    {/* 24*60*60*1000 */}
                     <option value={28800000}>8 Hours</option>
-                    {/* 8*60*60*1000 */}
                     <option value={3600000}>1 Hour</option>
-                    {/* 60*60*1000 */}
                 </select>
 
-                {/* Enforce Constraints checkbox */}
-                <label style={{marginLeft: "20px"}}>
+                {/* Enforce Constraints */}
+                <label className="custom-checkbox">
                     <input
                         type="checkbox"
                         checked={enforceConstraints}
                         onChange={handleEnforceConstraintsChange}
                     />
-                    {" "}Enforce Constraints
+                    <label>Enforce Constraints</label>
                 </label>
 
-                {/* ----- NEW: PAGE MODE SWITCH ----- */}
-                <label style={{marginLeft: "20px"}}>
+                {/* Page Mode */}
+                <label className="custom-checkbox">
                     <input
                         type="checkbox"
                         checked={pageMode}
                         onChange={handlePageModeChange}
                     />
-                    {" "}Page Mode
+                    <label>Page Mode</label>
                 </label>
 
-                {/* ----- NEW: TIME-SPAN SWITCH (1w, 2w, 1m) ----- */}
+                {/* Time-span (1w,2w,1m) only show if pageMode is ON */}
                 {pageMode && (
-                    <div style={{marginLeft: "20px", display: "inline-flex", gap: "10px"}}>
-                        <label>
+                    <div style={{ display: "inline-flex", gap: "10px", marginLeft: "20px" }}>
+                        <label className="custom-radio">
                             <input
                                 type="radio"
                                 name="timeSpan"
                                 checked={timeSpanDays === 7}
                                 onChange={() => setTimeSpanDays(7)}
                             />
-                            {" "}1 Week
+                            <label>1 Week</label>
                         </label>
-                        <label>
+                        <label className="custom-radio">
                             <input
                                 type="radio"
                                 name="timeSpan"
                                 checked={timeSpanDays === 14}
                                 onChange={() => setTimeSpanDays(14)}
                             />
-                            {" "}2 Weeks
+                            <label>2 Weeks</label>
                         </label>
-                        <label>
+                        <label className="custom-radio">
                             <input
                                 type="radio"
                                 name="timeSpan"
                                 checked={timeSpanDays === 30}
                                 onChange={() => setTimeSpanDays(30)}
                             />
-                            {" "}1 Month
+                            <label>1 Month</label>
                         </label>
                     </div>
                 )}
@@ -174,21 +172,19 @@ function GanttToolbar() {
 
             {/* Right side: date range display and pagination buttons */}
             <div className="gantt-upper-toolbar-right">
-                {/* If pageMode is ON, show Prev/Next buttons */}
                 <div className="gantt-upper-toolbar-right-text">
                     {rangeText}
                 </div>
 
                 {pageMode && (
-                    <button onClick={goPrevPage} style={{marginRight: "10px"}}>
-                        &lt;
-                    </button>
-                )}
-
-                {pageMode && (
-                    <button onClick={goNextPage} style={{marginLeft: "10px"}}>
-                        &gt;
-                    </button>
+                    <>
+                        <button onClick={goPrevPage} style={{ marginRight: "10px" }}>
+                            &lt;
+                        </button>
+                        <button onClick={goNextPage} style={{ marginLeft: "10px" }}>
+                            &gt;
+                        </button>
+                    </>
                 )}
             </div>
         </div>
