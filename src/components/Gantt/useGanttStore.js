@@ -8,17 +8,83 @@ import * as d3 from "d3";
  */
 function buildTree(tasks) {
     const byId = new Map();
-    tasks.forEach(t => byId.set(t.id, {...t, children: []}));
-
-    // Link children to parents:
     tasks.forEach(t => {
-        if (t.parentId && byId.has(t.parentId)) {
-            byId.get(t.parentId).children.push(byId.get(t.id));
+        // Merge tasks with same ID if re-used, or just store.
+        // (We do a shallow clone to avoid mutating original.)
+        if (!byId.has(t.id)) {
+            byId.set(t.id, {...t, children: []});
+        } else {
+            // Merge fields if repeated ID
+            const existing = byId.get(t.id);
+            byId.set(t.id, {
+                ...existing,
+                ...t,
+                children: existing.children || []
+            });
         }
     });
 
-    // Return only top-level tasks (those without parentId):
-    return Array.from(byId.values()).filter(t => !t.parentId);
+    // Link children to parents
+    byId.forEach((task) => {
+        const pid = task.parentId;
+        if (pid && byId.has(pid)) {
+            byId.get(pid).children.push(task);
+        }
+    });
+
+    // Return only top-level tasks (those without parentId).
+    const roots = [];
+    byId.forEach((task) => {
+        if (!task.parentId) {
+            roots.push(task);
+        }
+    });
+
+    // Now recursively assign summary start/end if needed
+    // (We leave it so it won't do anything that 'pins' them anymore)
+    roots.forEach(root => {
+        applySummaryRanges(root);
+    });
+
+    return roots;
+}
+
+/**
+ * Recursive function that used to pin summary tasks if they lacked start/end.
+ * Now it is modified so it does NOT set .start/.end for isSummary tasks
+ * unless they're already pinned. This ensures summary tasks remain "floating."
+ */
+function applySummaryRanges(task) {
+    // Recurse into children first
+    for (const c of task.children) {
+        applySummaryRanges(c);
+    }
+
+    // If this is a summary, we *do NOT* set task.start or task.end
+    // That way, if the original object didn't have them, it remains unpinned.
+    // (Leaving the code blank here ensures we don't overwrite them.)
+    if (task.isSummary) {
+        // no automatic .start/.end assignment
+        // do nothing so it remains "unpinned" if missing
+    }
+}
+
+/**
+ * Helper: gather all children, grandchildren, etc. (excluded summary node itself)
+ * Used in older code. Safe to keep if you need it for other logic.
+ */
+function collectAllDescendants(node, out) {
+    if (!node.children || node.children.length === 0) {
+        return;
+    }
+    for (const c of node.children) {
+        if (!c.isSummary) {
+            // only push real tasks or summary-children if needed
+            out.push(c);
+        }
+        // always recurse
+        collectAllDescendants(c, out);
+    }
 }
 
 /**
@@ -28,14 +94,13 @@ function buildTree(tasks) {
 function buildVisibleTasks(tree, collapsedMap, level = 0) {
     const result = [];
     for (const node of tree) {
-        // Add the node itself
         const hasChildren = node.children?.length > 0;
         result.push({
             ...node,
             level,
             hasChildren
         });
-        // If it’s collapsed, skip its children
+        // If collapsed, skip deeper
         if (hasChildren && !collapsedMap[node.id]) {
             const sub = buildVisibleTasks(node.children, collapsedMap, level + 1);
             result.push(...sub);
@@ -150,7 +215,9 @@ const useGanttStore = create((set, get) => ({
             if (state.visibleStart && state.timeRanges.start) {
                 // shift visibleEnd to be visibleStart + timeSpanDays
                 const newEnd = addDays(state.visibleStart, days);
-                set({visibleEnd: clampDate(newEnd, state.timeRanges.start, state.timeRanges.end)});
+                set({
+                    visibleEnd: clampDate(newEnd, state.timeRanges.start, state.timeRanges.end)
+                });
             }
             state.rebuildAll();
         }
