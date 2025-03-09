@@ -107,7 +107,7 @@ function useApp() {
                 {
                     id: 60,
                     parentId: 50,
-                    name: "Grandchild Task 60 (copy of #6)",
+                    name: "Grandchild Task 60 (copy of #6) LONG NAME LONG NAME",
                     start: parseLocalDate("2021-06-19"),
                     end: parseLocalDate("2021-06-22"),
                 },

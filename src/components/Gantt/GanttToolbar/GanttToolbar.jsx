@@ -16,12 +16,12 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
  */
 function formatRangeDisplay(start, end) {
     if (!start || !end) return "";
-    const startMon  = MONTHS[start.getMonth()];
-    const endMon    = MONTHS[end.getMonth()];
-    const startDay  = start.getDate();
-    const endDay    = end.getDate();
+    const startMon = MONTHS[start.getMonth()];
+    const endMon = MONTHS[end.getMonth()];
+    const startDay = start.getDate();
+    const endDay = end.getDate();
     const startYear = start.getFullYear();
-    const endYear   = end.getFullYear();
+    const endYear = end.getFullYear();
 
     const sameMonth = (startMon === endMon) && (startYear === endYear);
     const sameYear = (startYear === endYear);
@@ -39,27 +39,27 @@ function formatRangeDisplay(start, end) {
 
 function GanttToolbar() {
     // ----- Existing store values -----
-    const snapEnabled          = useGanttStore(state => state.snapEnabled);
-    const setSnapEnabled       = useGanttStore(state => state.setSnapEnabled);
+    const snapEnabled = useGanttStore(state => state.snapEnabled);
+    const setSnapEnabled = useGanttStore(state => state.setSnapEnabled);
 
-    const snapIncrement        = useGanttStore(state => state.snapIncrement);
-    const setSnapIncrement     = useGanttStore(state => state.setSnapIncrement);
+    const snapIncrement = useGanttStore(state => state.snapIncrement);
+    const setSnapIncrement = useGanttStore(state => state.setSnapIncrement);
 
-    const enforceConstraints   = useGanttStore(state => state.enforceConstraints);
+    const enforceConstraints = useGanttStore(state => state.enforceConstraints);
     const setEnforceConstraints = useGanttStore(state => state.setEnforceConstraints);
 
-    const timeRanges           = useGanttStore(state => state.timeRanges);
+    const timeRanges = useGanttStore(state => state.timeRanges);
 
     // ----- NEW PAGINATION / TIME-SPAN SWITCH -----
-    const pageMode             = useGanttStore(state => state.pageMode);
-    const setPageMode          = useGanttStore(state => state.setPageMode);
+    const pageMode = useGanttStore(state => state.pageMode);
+    const setPageMode = useGanttStore(state => state.setPageMode);
 
     // Instead of calling it "weekSpan", now we store the actual "timeSpanDays" (7,14,30).
-    const timeSpanDays         = useGanttStore(state => state.timeSpanDays);
-    const setTimeSpanDays      = useGanttStore(state => state.setTimeSpanDays);
+    const timeSpanDays = useGanttStore(state => state.timeSpanDays);
+    const setTimeSpanDays = useGanttStore(state => state.setTimeSpanDays);
 
-    const goPrevPage           = useGanttStore(state => state.goPrevPage);
-    const goNextPage           = useGanttStore(state => state.goNextPage);
+    const goPrevPage = useGanttStore(state => state.goPrevPage);
+    const goNextPage = useGanttStore(state => state.goNextPage);
 
     // The final "domain" used for drawing after pagination/clamping
     const domain = useGanttStore(state => state.domain);
@@ -95,7 +95,7 @@ function GanttToolbar() {
             <div className="gantt-upper-toolbar-left">
 
                 {/* Snap checkbox */}
-                <label style={{ marginRight: "8px" }}>
+                <label style={{marginRight: "8px"}}>
                     <input
                         type="checkbox"
                         checked={snapEnabled}
@@ -109,13 +109,16 @@ function GanttToolbar() {
                     onChange={handleIntervalChange}
                     disabled={!snapEnabled}
                 >
-                    <option value={86400000}>Day</option>      {/* 24*60*60*1000 */}
-                    <option value={28800000}>8 Hours</option>  {/* 8*60*60*1000 */}
-                    <option value={3600000}>1 Hour</option>    {/* 60*60*1000 */}
+                    <option value={86400000}>Day</option>
+                    {/* 24*60*60*1000 */}
+                    <option value={28800000}>8 Hours</option>
+                    {/* 8*60*60*1000 */}
+                    <option value={3600000}>1 Hour</option>
+                    {/* 60*60*1000 */}
                 </select>
 
                 {/* Enforce Constraints checkbox */}
-                <label style={{ marginLeft: "20px" }}>
+                <label style={{marginLeft: "20px"}}>
                     <input
                         type="checkbox"
                         checked={enforceConstraints}
@@ -125,7 +128,7 @@ function GanttToolbar() {
                 </label>
 
                 {/* ----- NEW: PAGE MODE SWITCH ----- */}
-                <label style={{ marginLeft: "20px" }}>
+                <label style={{marginLeft: "20px"}}>
                     <input
                         type="checkbox"
                         checked={pageMode}
@@ -136,7 +139,7 @@ function GanttToolbar() {
 
                 {/* ----- NEW: TIME-SPAN SWITCH (1w, 2w, 1m) ----- */}
                 {pageMode && (
-                    <div style={{ marginLeft: "20px", display: "inline-flex", gap: "10px" }}>
+                    <div style={{marginLeft: "20px", display: "inline-flex", gap: "10px"}}>
                         <label>
                             <input
                                 type="radio"
@@ -172,16 +175,18 @@ function GanttToolbar() {
             {/* Right side: date range display and pagination buttons */}
             <div className="gantt-upper-toolbar-right">
                 {/* If pageMode is ON, show Prev/Next buttons */}
+                <div className="gantt-upper-toolbar-right-text">
+                    {rangeText}
+                </div>
+
                 {pageMode && (
-                    <button onClick={goPrevPage} style={{ marginRight: "10px" }}>
+                    <button onClick={goPrevPage} style={{marginRight: "10px"}}>
                         &lt;
                     </button>
                 )}
 
-                {rangeText}
-
                 {pageMode && (
-                    <button onClick={goNextPage} style={{ marginLeft: "10px" }}>
+                    <button onClick={goNextPage} style={{marginLeft: "10px"}}>
                         &gt;
                     </button>
                 )}

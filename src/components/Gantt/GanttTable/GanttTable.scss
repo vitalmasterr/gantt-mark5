@@ -6,6 +6,7 @@
     border-collapse: collapse;
     width: 100%;
     background-color: white;
+    table-layout: fixed;
 
     thead {
       height: $ruler-height;
@@ -16,9 +17,24 @@
       font-family: Roboto;
 
       th {
-        padding: 0 30px 0 0;
+        padding: 0 10px;
         border-right: 1px solid whitesmoke;
         color: #8d8e8f;
+
+        //align-items: center;
+
+        &:nth-child(1) {
+          width: 350px;
+          //padding: 0 10px 0 0;
+        }
+
+        &:nth-child(2) {
+          min-width: 80px;
+        }
+
+        &:nth-child(3) {
+          min-width: 80px;
+        }
       }
     }
 
@@ -32,6 +48,10 @@
 
       td {
         padding: 0 30px;
+        text-align: center;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
 
         &.gantt-table-tasktd {
           padding: 0 30px 0 0;
@@ -46,6 +66,7 @@
     width: max-content;
     align-items: center;
     max-width: 350px;
+    text-overflow: ellipsis;
 
     &-expand {
       display: inline-block; // Ensures width is applied
